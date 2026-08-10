@@ -617,6 +617,65 @@ def _build_heartbeat_hooks(user_hooks: HookManager) -> HookManager:
     return HookManager(scoped)
 
 
+class _GateTally:
+    """Tool-gate outcomes accumulated over one cron run.
+
+    A cron whose every tool call was refused still gets prose back from the
+    model, so the reply text alone cannot separate "did the work" from "was
+    blocked at every step". Counting both arms is what makes that verdict
+    available once the turn ends. A multi-agent run tallies across the whole
+    sequence, because status and history are per-run, not per-agent.
+
+    Only an unconditional security block counts as a refusal here. A governance
+    denial and an unattended-approval timeout also arrive unapproved, but they
+    describe the policy state or an absent approver rather than a defect in the
+    job — and a job's failure counter drives auto-pause, which is durable.
+    """
+
+    def __init__(self) -> None:
+        self.refused: list[str] = []
+        self.approved = 0
+
+    def note(self, title: str, approved: bool, security_blocked: bool) -> None:
+        if approved:
+            self.approved += 1
+        elif security_blocked:
+            self.refused.append(title)
+
+    @property
+    def all_blocked(self) -> bool:
+        """Tools were attempted and every one of them was security-blocked."""
+        return bool(self.refused) and self.approved == 0
+
+
+def _apply_gate_verdict(job: CronJob, tally: _GateTally) -> None:
+    """Record a finished cron run's success or failure from its gate outcomes.
+
+    Shared by both cron agent paths so their verdicts cannot drift. Mutating
+    ``last_status`` is how the non-raising cron paths signal failure:
+    ``CronScheduler._execute`` keeps an explicit "error" rather than
+    overwriting it with "ok".
+    """
+    if tally.all_blocked:
+        # Nothing the model attempted was permitted, so the run accomplished
+        # nothing however plausible its reply reads. A success resets
+        # consecutive_failures and clears auto_paused, so recording one here
+        # would keep a structurally-failing job firing on its schedule forever.
+        job.last_status = "error"
+        job.last_error = redact(
+            f"all {len(tally.refused)} tool call(s) blocked by the security gate: "
+            + ", ".join(tally.refused[:3])
+        )[:500]
+        job.record_failure()
+        return
+    # Clear failure dedup on any success, regardless of whether the success
+    # result itself is a dup. A successful run means the job recovered — next
+    # failure should always alert fresh.
+    job.last_failure_hash = ""
+    job.last_failure_at = 0.0
+    job.record_success()
+
+
 def _result_hash(text: str) -> str:
     """Normalize volatile data and return a 16-hex-char SHA-256 prefix.
 
@@ -2433,6 +2492,9 @@ class GatewayOrchestrator:
                 assert self.ctx_builder is not None
                 result_text = "_No response._"
                 _seq_downgraded = False
+                # Run-scoped: a sequence where one agent got a tool through has
+                # done work, even if a later agent was blocked outright.
+                _gate = _GateTally()
                 for agent in agents:
                     agent_session_key = f"cron:{job.id}:{agent}"
                     if self.cron_svc is not None:
@@ -2483,6 +2545,7 @@ class GatewayOrchestrator:
                                 if job.approval_mode == "auto"
                                 else self._interactive_approval("cron")
                             ),
+                            on_tool_gate=_gate.note,
                         )
                         if not result_text:
                             result_text = "_No response._"
@@ -2546,6 +2609,10 @@ class GatewayOrchestrator:
                 if _seq_downgraded:
                     result_text = _annotate_model_downgrade(result_text)
                 job.set_run_result(result_text)
+                # This path owns the same verdict as the single-agent one, so a
+                # multi-agent job's failure counter moves in both directions —
+                # which is what keeps auto-pause both reachable and clearable.
+                _apply_gate_verdict(job, _gate)
                 return result_text
 
             # ── Single-agent path (existing behavior) ──
@@ -2587,6 +2654,7 @@ class GatewayOrchestrator:
                 # Wall clock for the cron agent turn — see the sequential site
                 # above. acp reports no duration, so this is the row's fallback.
                 _turn_t0 = time.monotonic()
+                _gate = _GateTally()
                 result_text = await stream_and_collect(
                     client,
                     full_message,
@@ -2599,6 +2667,7 @@ class GatewayOrchestrator:
                     on_tool_approval=(
                         None if job.approval_mode == "auto" else self._interactive_approval("cron")
                     ),
+                    on_tool_gate=_gate.note,
                 )
 
                 if not result_text:
@@ -2640,12 +2709,7 @@ class GatewayOrchestrator:
                 # Suppress Slack for repeated identical results to avoid spam.
                 rh = _result_hash(result_text)
 
-                # Clear failure dedup on any success, regardless of whether
-                # the success result itself is a dup. A successful run means
-                # the job recovered — next failure should always alert fresh.
-                job.last_failure_hash = ""
-                job.last_failure_at = 0.0
-                job.record_success()
+                _apply_gate_verdict(job, _gate)
 
                 if rh == job.last_posted_hash:
                     job.consecutive_dupes += 1

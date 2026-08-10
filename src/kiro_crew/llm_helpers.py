@@ -442,6 +442,7 @@ async def stream_and_collect(
     on_chunk: Callable[[str], None] | None = None,
     on_tool_approval: Callable[[LLMEvent], Awaitable[bool]] | None = None,
     on_steer_consumed: Callable[[str], None] | None = None,
+    on_tool_gate: Callable[[str, bool, bool], None] | None = None,
     retry_transient: bool = True,
     max_turns: int | None = None,
     session_key: str = "",
@@ -465,6 +466,21 @@ async def stream_and_collect(
             fire-and-forget write, so this echo is the ONLY authoritative signal
             that the backend injected it; a caller that steers must observe this
             to know which of its steers to requeue when the turn ends.
+        on_tool_gate: Optional callback invoked once per tool permission
+            decision with ``(tool_title, approved, security_blocked)``. Lets a
+            caller tell "the model did work" apart from "every tool the model
+            attempted was blocked" — a distinction the returned text cannot
+            carry, because a model whose tools were all refused still returns
+            plausible prose. ``security_blocked`` is True only for the
+            unconditional deny checks (sensitive path, sensitive bash, a deny
+            pattern); a governance ``TOOL_DENY`` and an unattended-approval
+            timeout are refusals that say nothing about the job, so they arrive
+            with ``approved=False`` and ``security_blocked=False``.
+            Delivered when the attempt settles, not mid-stream, and decisions
+            from an abandoned retry attempt are discarded: they describe work
+            the final turn never did. ``tool_title`` is LLM-authored: redact it
+            before display or persistence. Raising from the callback is
+            swallowed; observing a gate decision must never fail the turn.
         retry_transient: When True (default), transient backend errors are
             retried in-place with bounded backoff. Set False from callers that
             already own an outer transient-retry loop, so the inner arm doesn't
@@ -501,6 +517,12 @@ async def stream_and_collect(
         # suppresses the requeue, so dropping the acknowledgement makes the cleanup hand an
         # already-answered question back and ask it twice. Re-initialised per attempt.
         consumed_this_attempt: list[str] = []
+        # Same per-attempt discipline as the steer acknowledgements above, and for the
+        # same reason: a retry re-sends the original message, so decisions from an
+        # abandoned attempt describe work the final turn never did. Committing them
+        # would let a refusal from a discarded attempt outvote a clean retry and fail
+        # a healthy job.
+        gate_this_attempt: list[tuple[str, bool, bool]] = []
         retrying = False
         try:
             async for event in provider.stream(message):
@@ -509,6 +531,11 @@ async def stream_and_collect(
                     if on_chunk:
                         on_chunk(event.text)
                 elif event.kind == EVENT_PERMISSION_REQUEST:
+                    # Captures the gate's own reason for this one decision, so a
+                    # hard security block is distinguishable from a governance
+                    # denial or an unattended-approval timeout. Only the former
+                    # says anything about the job itself.
+                    _decision: list[tuple[str, str]] = []
                     approved = await _resolve_permission(
                         provider,
                         event,
@@ -518,7 +545,13 @@ async def stream_and_collect(
                         session_key=session_key,
                         agent=agent,
                         app=app,
+                        on_decision=lambda outcome, mech: _decision.append((outcome, mech)),
                     )
+                    if on_tool_gate:
+                        _mech = _decision[-1][1] if _decision else ""
+                        gate_this_attempt.append(
+                            (event.title or "", approved, _mech.startswith("always_deny"))
+                        )
                     if not approved:
                         continue
                 elif event.kind == EVENT_TOOL_CALL:
@@ -640,6 +673,13 @@ async def stream_and_collect(
             if not retrying and on_steer_consumed:
                 for consumed_text in consumed_this_attempt:
                     on_steer_consumed(consumed_text)
+            if not retrying and on_tool_gate:
+                for gate_title, gate_approved, gate_blocked in gate_this_attempt:
+                    try:
+                        on_tool_gate(gate_title, gate_approved, gate_blocked)
+                    except Exception:
+                        # A caller's bookkeeping must never abort the turn.
+                        logger.debug("on_tool_gate callback failed", exc_info=True)
 
 
 async def stream_and_collect_json(
@@ -667,12 +707,28 @@ async def _resolve_permission(
     session_key: str = "",
     agent: str = "",
     app: str = "",
+    on_decision: Callable[[str, str], None] | None = None,
 ) -> bool:
-    """Resolve a tool permission request. Returns True if approved."""
+    """Resolve a tool permission request. Returns True if approved.
+
+    *on_decision*, when given, receives ``(outcome, mechanism)`` for the single
+    decision this call makes — the same pair that reaches the SEL audit row.
+    ``mechanism`` is ``"always_deny"``/``"always_deny_input"`` only for the
+    unconditional security checks; a governance ``TOOL_DENY`` and an interactive
+    rejection carry no mechanism, which is what lets a caller tell a tool the
+    gate hard-blocked apart from one a policy or a human declined.
+    """
     from kiro_crew.hooks import TOOL_AUTO_APPROVE, TOOL_DENY
     from kiro_crew.sel import sel
 
     def _log(outcome: str, **extra):
+        # Single funnel for every decision path, so the sink cannot miss one.
+        if on_decision is not None:
+            _meta = extra.get("metadata") or {}
+            try:
+                on_decision(outcome, str(_meta.get("mechanism") or ""))
+            except Exception:
+                logger.debug("on_decision sink failed", exc_info=True)
         sel().log_tool_invocation(
             session_key=session_key,
             agent=agent,

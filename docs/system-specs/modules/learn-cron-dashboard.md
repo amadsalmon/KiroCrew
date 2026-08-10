@@ -178,6 +178,30 @@ Deterministic cron jobs that bypass the LLM entirely:
 - **Safety**: scripts must live under `~/.kiro/crew/crons/`. `is_sensitive_path()` blocks credential file access. SEL audit on every invocation. Auto-pause after 5 consecutive failures (`_AUTO_PAUSE_THRESHOLD`, single-sourced in `CronJob.record_failure`/`record_success`). The auto-pause is **persistent**: an execution-owned `auto_paused` flag (distinct from `user_paused`) is written by `_save`, propagated by `_merge_job_result`, and folded into the effective `enabled` derivation in `_load` — so a failing job stays paused across a daemon restart; `enable_job(True)` or a later success clears it (SEL-audited transitions). Concurrent execution guard prevents double-fire.
 - **Kind tag**: `cron_list` labels each job as `script`, `command`, or `agent` based on which mode is configured.
 
+#### Auto-pause applies to `agent` (message) crons too
+
+Auto-pause is not script/command-only. An `agent` cron's turn signals failure by
+raising, so a turn that returns prose is recorded as a success even when the
+security gate refused every tool the model attempted — and a success resets
+`consecutive_failures` and clears `auto_paused`, which keeps a job that cannot
+succeed firing on its schedule indefinitely.
+
+`stream_and_collect`'s `on_tool_gate` callback reports each tool permission
+decision as `(tool_title, approved, security_blocked)`. Both cron agent paths
+(single-agent and the sequential `agent_sequence` loop) tally those decisions
+per run and route the outcome through one shared verdict: when tools were
+attempted and every one was **security-blocked** with none approved, the run
+sets `last_status = "error"` with a redacted reason and calls `record_failure()`,
+so the same 5-failure `_AUTO_PAUSE_THRESHOLD` applies. Any other outcome records
+a success.
+
+Only an unconditional security block counts. A governance `TOOL_DENY` and an
+unattended-approval timeout also arrive unapproved, but they describe the policy
+state or an absent approver rather than a defect in the job — the same reason the
+fire-time governance denials deliberately skip `record_failure()`. Counting them
+would durably auto-pause a healthy job, since `record_success()` clears
+`auto_paused` but never restores `enabled`.
+
 ### Enabled Predicate & Off-Thread Count (`_record_is_enabled` / `count_enabled_from_disk`)
 
 The effective-enabled predicate of a serialized job — enabled iff neither
