@@ -90,6 +90,7 @@ vi.mock('../api/client', () => ({
 }))
 
 import { ChatPanel } from '../pages/settings/ChatPanel'
+import { MAX_MESSAGE_FONT_SIZE } from '../pages/chat/ChatSettings'
 
 const LS_KEY = 'mc-chat-config'
 
@@ -322,6 +323,23 @@ describe('ChatPanel — Messages', () => {
     const group = await screen.findByRole('group', { name: 'Content Width' })
     fireEvent.click(within(group).getByRole('button', { name: 'Full' }))
     await waitFor(() => expect(storedChat().contentWidth).toBe('full'))
+  })
+
+  it('steps the message font size up and down from the default', async () => {
+    wrap()
+    await screen.findByText('Message font size')
+    fireEvent.click(screen.getByRole('button', { name: 'Increase' }))
+    await waitFor(() => expect(storedChat().messageFontSize).toBe(15))
+    fireEvent.click(screen.getByRole('button', { name: 'Decrease' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Decrease' }))
+    await waitFor(() => expect(storedChat().messageFontSize).toBe(13))
+  })
+
+  it('clamps the message font size at MAX_MESSAGE_FONT_SIZE and does not exceed it', async () => {
+    wrap()
+    const increase = await screen.findByRole('button', { name: 'Increase' })
+    for (let i = 0; i < 20; i++) fireEvent.click(increase)
+    await waitFor(() => expect(storedChat().messageFontSize).toBe(MAX_MESSAGE_FONT_SIZE))
   })
 
   it.each([

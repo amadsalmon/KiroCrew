@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { SettingsSection, SettingsCard, SettingsToggle, SettingsSelect, SettingsInput, SettingsButtonGroup } from '../../components/settings'
-import { loadChatConfig, saveChatConfig, type ChatConfig, type ContentWidth, type DashboardConfig, type SendMode } from '../chat/ChatSettings'
+import { SettingsSection, SettingsCard, SettingsToggle, SettingsSelect, SettingsInput, SettingsButtonGroup, SettingsStepper } from '../../components/settings'
+import { loadChatConfig, saveChatConfig, MIN_MESSAGE_FONT_SIZE, MAX_MESSAGE_FONT_SIZE, DEFAULT_MESSAGE_FONT_SIZE, type ChatConfig, type ContentWidth, type DashboardConfig, type SendMode } from '../chat/ChatSettings'
 import { api } from '../../api/client'
 import { useOptimisticConfigPaths, setConfigPathValue } from './useOptimisticConfigPaths'
 import { useAvailableModels } from '../../hooks/useAvailableModels'
@@ -689,6 +689,18 @@ export function ChatPanel() {
           />
           <SettingsToggle label={i18nT('pages.settings.chatPanel.show_timestamps')} description={i18nT('pages.settings.chatPanel.display_time_on_each_message')} checked={chatCfg.showTimestamps} onChange={v => setChat('showTimestamps', v)} />
           <SettingsButtonGroup label={i18nT('pages.settings.chatPanel.content_width')} description={i18nT('pages.settings.chatPanel.compact_is_the_original_view_comfortable_and_ful')} value={chatCfg.contentWidth} options={[{ value: "compact", label: i18nT('pages.settings.chatPanel.compact') }, { value: "comfortable", label: i18nT('pages.settings.chatPanel.comfortable') }, { value: "full", label: i18nT('pages.settings.chatPanel.full') }]} onChange={v => setChat('contentWidth', v as ContentWidth)} />
+          {/* Client-only, like contentWidth just above — no configKey. Scoped to
+              message bubble body text (paragraphs, list items); sidebar, session
+              list and other chrome are unaffected. */}
+          <SettingsStepper
+            label={i18nT('pages.settings.chatPanel.message_font_size')}
+            description={i18nT('pages.settings.chatPanel.message_font_size_desc')}
+            value={chatCfg.messageFontSize}
+            suffix="px"
+            onIncrement={() => setChat('messageFontSize', Math.min(MAX_MESSAGE_FONT_SIZE, chatCfg.messageFontSize + 1))}
+            onDecrement={() => setChat('messageFontSize', Math.max(MIN_MESSAGE_FONT_SIZE, chatCfg.messageFontSize - 1))}
+            onReset={() => setChat('messageFontSize', DEFAULT_MESSAGE_FONT_SIZE)}
+          />
           <SettingsToggle label={i18nT('pages.settings.chatPanel.show_thinking_inline')} description={i18nT('pages.settings.chatPanel.show_intermediate_reasoning_text_between_tool_ca')} checked={!chatCfg.collapseAllSteps} onChange={v => setChat('collapseAllSteps', !v)} />
           <SettingsToggle label={i18nT('pages.settings.chatPanel.pin_last_prompt')} description={i18nT('pages.settings.chatPanel.pin_last_prompt_desc')} checked={chatCfg.pinLastPrompt} onChange={v => {
             setChat('pinLastPrompt', v)

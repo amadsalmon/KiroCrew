@@ -1305,7 +1305,7 @@ function MdParagraph({ node, children }: React.HTMLAttributes<HTMLParagraphEleme
     )
   }
   if (unfurl && meta) return <LinkCard meta={meta} href={unfurl} />
-  return <p {...sp(node)} className="my-1 leading-6">{children}</p>
+  return <p {...sp(node)} className="my-1 leading-relaxed">{children}</p>
 }
 
 /**
@@ -1411,7 +1411,7 @@ const MD_COMPONENTS: Components = {
   },
   li({ node, children, className }) {
     const isTask = className?.includes('task-list-item')
-    if (!isTask) return <li {...spa('li', node)} className="text-sm leading-relaxed">{children}</li>
+    if (!isTask) return <li {...spa('li', node)} className="leading-relaxed">{children}</li>
     // Task items use block flow, NOT flex. The previous `flex items-start` row
     // broke two ways: (1) an item containing a NESTED list (tasks.md shape)
     // laid the child <ul> out BESIDE the text; (2) any item long enough to
@@ -1433,7 +1433,7 @@ const MD_COMPONENTS: Components = {
     return (
       <li
         {...spa('li', node)}
-        className="text-sm leading-relaxed break-words pl-5 -indent-5 [&_input[type=checkbox]]:mr-1.5 [&_input[type=checkbox]]:align-middle [&>ul]:indent-0 [&>ol]:indent-0 [&>p:not(:first-child)]:indent-0 [&>ul]:mt-1 [&>ol]:mt-1"
+        className="leading-relaxed break-words pl-5 -indent-5 [&_input[type=checkbox]]:mr-1.5 [&_input[type=checkbox]]:align-middle [&>ul]:indent-0 [&>ol]:indent-0 [&>p:not(:first-child)]:indent-0 [&>ul]:mt-1 [&>ol]:mt-1"
       >
         {children}
       </li>

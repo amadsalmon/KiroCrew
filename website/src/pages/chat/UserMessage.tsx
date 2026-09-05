@@ -215,7 +215,7 @@ const UserMessage = memo(function UserMessage({ content, meta, timestamp, timest
 
   const bubble = (
     // 'message-bubble' is a stable theming hook — see website/docs/theming-contract.md
-    <div ref={userRef} onCopy={handleCopy} className={`message-bubble msg-content px-4 py-2 text-sm leading-6 rounded-xl overflow-hidden min-w-0 w-fit max-w-[min(550px,100%)] ${isSteer ? 'bg-accent-subtle text-text' : 'bg-card text-card-fg'}`} style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
+    <div ref={userRef} onCopy={handleCopy} className={`message-bubble msg-content px-4 py-2 leading-relaxed rounded-xl overflow-hidden min-w-0 w-fit max-w-[min(550px,100%)] ${isSteer ? 'bg-accent-subtle text-text' : 'bg-card text-card-fg'}`} style={{ overflowWrap: 'anywhere', wordBreak: 'break-word', fontSize: 'var(--mc-message-font-size, 14px)' }}>
       {renderContent(content, meta)}
     </div>
   )
