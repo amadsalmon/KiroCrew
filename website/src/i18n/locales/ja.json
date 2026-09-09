@@ -13791,7 +13791,9 @@
         "minimap_side_right": "右",
         "minimap": "ミニマップ",
         "minimap_location": "ミニマップの位置",
-        "minimap_location_desc": "右端に配置すると、ミニマップがスクロールバーを置き換えます。"
+        "minimap_location_desc": "右端に配置すると、ミニマップがスクロールバーを置き換えます。",
+        "message_font_size": "メッセージのフォントサイズ",
+        "message_font_size_desc": "メッセージ内のテキストのフォントサイズ（すべてのセッションに適用）。サイドバー、セッション一覧、その他のUIには影響しません。"
       },
       "computerUsePanel": {
         "accessibility": "アクセシビリティ",

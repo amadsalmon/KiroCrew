@@ -13986,7 +13986,9 @@
         "minimap_side_right": "दाएँ",
         "minimap": "मिनीमैप",
         "minimap_location": "मिनीमैप का स्थान",
-        "minimap_location_desc": "दाएँ किनारे पर होने पर मिनीमैप स्क्रॉलबार की जगह लेता है।"
+        "minimap_location_desc": "दाएँ किनारे पर होने पर मिनीमैप स्क्रॉलबार की जगह लेता है।",
+        "message_font_size": "संदेश फ़ॉन्ट आकार",
+        "message_font_size_desc": "हर सत्र में संदेश टेक्स्ट का फ़ॉन्ट आकार। साइडबार, सत्र सूची और बाकी इंटरफ़ेस पर कोई असर नहीं पड़ता।"
       },
       "computerUsePanel": {
         "accessibility": "सुगम्यता",

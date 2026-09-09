@@ -239,9 +239,9 @@ const UserMessage = memo(function UserMessage({ content, meta, timestamp, timest
             bubble it replaces, capped at 550px or the column, whichever is
             smaller. No JS measurement. */}
         <div
-          className="edit-grow user-bubble px-4 py-2 text-sm leading-6 rounded-xl bg-card text-card-fg overflow-hidden min-w-0 w-fit max-w-[min(550px,100%)] outline-solid outline-2 -outline-offset-2 outline-accent/60"
+          className="edit-grow user-bubble px-4 py-2 leading-relaxed rounded-xl bg-card text-card-fg overflow-hidden min-w-0 w-fit max-w-[min(550px,100%)] outline-solid outline-2 -outline-offset-2 outline-accent/60"
           data-replicated-value={draft}
-          style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}
+          style={{ overflowWrap: 'anywhere', wordBreak: 'break-word', fontSize: 'var(--mc-message-font-size, 14px)' }}
         >
           <textarea
             ref={taRef}
@@ -250,7 +250,8 @@ const UserMessage = memo(function UserMessage({ content, meta, timestamp, timest
             // focus-cue-ok: the cue is the wrapping .edit-grow frame above, which
             // paints a 2px accent outline for the whole edit session; a second
             // ring on the textarea would double-paint the one control.
-            className="bg-transparent text-card-fg resize-none overflow-hidden focus:outline-hidden text-sm leading-6"
+            className="bg-transparent text-card-fg resize-none overflow-hidden focus:outline-hidden leading-relaxed"
+            style={{ fontSize: 'var(--mc-message-font-size, 14px)' }}
             value={draft}
             onChange={e => setDraft(e.target.value)}
             {...ime.bindComposition()}
@@ -278,7 +279,7 @@ const UserMessage = memo(function UserMessage({ content, meta, timestamp, timest
 
   const bubble = (
     // 'message-bubble' is a stable theming hook — see website/docs/theming-contract.md
-    <div ref={userRef} onCopy={handleCopy} className={`message-bubble msg-content px-4 py-2 text-sm leading-6 rounded-xl overflow-hidden min-w-0 w-fit max-w-[min(550px,100%)] ${isSteer ? 'bg-accent-subtle text-text' : 'user-bubble bg-card text-card-fg'}`} style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
+    <div ref={userRef} onCopy={handleCopy} className={`message-bubble mc-message-font-scope msg-content px-4 py-2 leading-relaxed rounded-xl overflow-hidden min-w-0 w-fit max-w-[min(550px,100%)] ${isSteer ? 'bg-accent-subtle text-text' : 'user-bubble bg-card text-card-fg'}`} style={{ overflowWrap: 'anywhere', wordBreak: 'break-word', fontSize: 'var(--mc-message-font-size, 14px)' }}>
       {/* `messageTs` FIRST, `clientTs` only as a fallback. The opposite order is
           correct for the audio key above, which wants the optimistic bubble's own
           identity, but this value is COMPARED against server-clock slot mint

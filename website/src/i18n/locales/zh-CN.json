@@ -13791,7 +13791,9 @@
         "minimap_side_right": "右侧",
         "minimap": "小地图",
         "minimap_location": "小地图位置",
-        "minimap_location_desc": "位于右边缘时，小地图将取代滚动条。"
+        "minimap_location_desc": "位于右边缘时，小地图将取代滚动条。",
+        "message_font_size": "消息字号",
+        "message_font_size_desc": "所有会话中消息文本的字号。侧边栏、会话列表和其余界面不受影响。"
       },
       "computerUsePanel": {
         "accessibility": "辅助功能",

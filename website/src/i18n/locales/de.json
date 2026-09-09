@@ -13986,7 +13986,9 @@
         "minimap_side_right": "Rechts",
         "minimap": "Minimap",
         "minimap_location": "Position der Minimap",
-        "minimap_location_desc": "Am rechten Rand ersetzt die Minimap die Scrollleiste."
+        "minimap_location_desc": "Am rechten Rand ersetzt die Minimap die Scrollleiste.",
+        "message_font_size": "Schriftgröße der Nachrichten",
+        "message_font_size_desc": "Schriftgröße für den Nachrichtentext, in jeder Sitzung. Seitenleiste, Sitzungsliste und der Rest der Oberfläche sind nicht betroffen."
       },
       "computerUsePanel": {
         "accessibility": "Bedienungshilfen",

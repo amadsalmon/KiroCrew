@@ -207,6 +207,7 @@ export default [
           // hooks/useMessageSearch.ts locate these elements by class.
           'message-bubble', 'input-area', 'chat-container', 'session-agent-label', 'primary',
           'pierre-editor-fallback',
+          'mc-message-font-scope', // styles/message-font-size.css (imported in main.tsx, outside index.css's @source graph)
         ],
       }],
       'shadcn/require-static-classes': 'error',

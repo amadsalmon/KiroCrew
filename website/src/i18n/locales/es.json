@@ -14181,7 +14181,9 @@
         "minimap_side_right": "Derecha",
         "minimap": "Minimapa",
         "minimap_location": "Ubicación del minimapa",
-        "minimap_location_desc": "Cuando está en el borde derecho, el minimapa reemplaza la barra de desplazamiento."
+        "minimap_location_desc": "Cuando está en el borde derecho, el minimapa reemplaza la barra de desplazamiento.",
+        "message_font_size": "Tamaño de fuente de los mensajes",
+        "message_font_size_desc": "Tamaño de fuente del texto de los mensajes, en todas las sesiones. La barra lateral, la lista de sesiones y el resto de la interfaz no se ven afectados."
       },
       "computerUsePanel": {
         "accessibility": "Accesibilidad",

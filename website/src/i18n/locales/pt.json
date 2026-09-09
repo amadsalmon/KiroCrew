@@ -14181,7 +14181,9 @@
         "minimap_side_right": "Direita",
         "minimap": "Minimapa",
         "minimap_location": "Localização do minimapa",
-        "minimap_location_desc": "Na borda direita, o minimapa substitui a barra de rolagem."
+        "minimap_location_desc": "Na borda direita, o minimapa substitui a barra de rolagem.",
+        "message_font_size": "Tamanho da fonte das mensagens",
+        "message_font_size_desc": "Tamanho da fonte do texto das mensagens, em todas as sessões. A barra lateral, a lista de sessões e o restante da interface não são afetados."
       },
       "computerUsePanel": {
         "accessibility": "Acessibilidade",

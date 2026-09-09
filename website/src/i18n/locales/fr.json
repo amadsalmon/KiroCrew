@@ -14181,7 +14181,9 @@
         "minimap_side_right": "Droite",
         "minimap": "Minicarte",
         "minimap_location": "Emplacement de la minicarte",
-        "minimap_location_desc": "Sur le bord droit, la minicarte remplace la barre de défilement."
+        "minimap_location_desc": "Sur le bord droit, la minicarte remplace la barre de défilement.",
+        "message_font_size": "Taille de police des messages",
+        "message_font_size_desc": "Taille de police du texte des messages, dans toutes les sessions. La barre latérale, la liste des sessions et le reste de l'interface ne sont pas affectés."
       },
       "computerUsePanel": {
         "accessibility": "Accessibilité",
