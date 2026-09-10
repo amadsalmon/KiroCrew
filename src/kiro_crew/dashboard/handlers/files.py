@@ -88,13 +88,16 @@ from kiro_crew.zip_vet import ZipInventoryRejected, vet_zip_inventory_bytes
 # Content-Type header correct for the most common Word/Excel/PowerPoint
 # downloads.
 mimetypes.add_type(
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".docx",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".docx",
 )
 mimetypes.add_type(
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ".xlsx",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".xlsx",
 )
 mimetypes.add_type(
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation", ".pptx",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".pptx",
 )
 
 _INLINE_DISPOSITION_PREFIXES = frozenset({"audio/", "video/", "image/", "application/pdf"})
@@ -106,6 +109,7 @@ logger = logging.getLogger(__name__)
 def _sel():
     """Late-binding _sel() for test monkeypatch compatibility."""
     import kiro_crew.dashboard.handlers as _pkg  # noqa: F811
+
     return _pkg.sel()
 
 
@@ -171,18 +175,28 @@ async def api_reveal_path(request: web.Request) -> web.Response:
         return web.json_response({"error": "invalid path"}, status=400)
     if is_sensitive_path(path):
         _sel().log_tool_invocation(
-            session_key="api", source="api", tool_name="reveal_path",
-            outcome="denied", error="sensitive_path",
-            resources=path, metadata={"action": action})
+            session_key="api",
+            source="api",
+            tool_name="reveal_path",
+            outcome="denied",
+            error="sensitive_path",
+            resources=path,
+            metadata={"action": action},
+        )
         return web.json_response({"error": "access denied"}, status=403)
     # Gate: only spawn native openers from direct-local requests. Remote/tunneled
     # callers get the copy-to-clipboard fallback — spawning Finder on a machine
     # the user is not looking at is surprising and useless.
     if not is_direct_local_request(request):
         _sel().log_tool_invocation(
-            session_key="api", source="api", tool_name="reveal_path",
-            outcome="denied", error="remote_request",
-            resources=path, metadata={"action": action})
+            session_key="api",
+            source="api",
+            tool_name="reveal_path",
+            outcome="denied",
+            error="remote_request",
+            resources=path,
+            metadata={"action": action},
+        )
         # Degrade to a clipboard copy: `copy` is the path to write. The remote
         # cause is recorded in the SEL audit above (error="remote_request"); the
         # response body carries no path, host, or exception detail beyond `copy`.
@@ -206,8 +220,13 @@ async def api_reveal_path(request: web.Request) -> web.Response:
     else:
         copied = not platform_compat.reveal_in_file_manager(path)
     _sel().log_tool_invocation(
-        session_key="api", source="api", tool_name="reveal_path",
-        outcome="success", resources=path, metadata={"action": action})
+        session_key="api",
+        source="api",
+        tool_name="reveal_path",
+        outcome="success",
+        resources=path,
+        metadata={"action": action},
+    )
     # A local grant whose host had no working file manager degrades to the
     # clipboard; `copy` is the path to write.
     if copied:
@@ -495,7 +514,11 @@ async def api_outbox_download(request: web.Request) -> web.StreamResponse:
             {"error": f"Binary file type not allowed: {content_type}"}, status=403
         )
     # Inline disposition for media types the browser can render
-    disposition = "inline" if any(content_type.startswith(t) for t in _INLINE_DISPOSITION_PREFIXES) else "attachment"
+    disposition = (
+        "inline"
+        if any(content_type.startswith(t) for t in _INLINE_DISPOSITION_PREFIXES)
+        else "attachment"
+    )
     # SVG can contain scripts — never serve inline on the dashboard origin
     if content_type == "image/svg+xml":
         disposition = "attachment"
@@ -774,9 +797,7 @@ async def api_slack_upload_file(request: web.Request) -> web.Response:
             return web.json_response(
                 {"error": destination.error, "code": destination.code}, status=400
             )
-        return web.json_response(
-            {"error": destination.error, "code": destination.code}, status=403
-        )
+        return web.json_response({"error": destination.error, "code": destination.code}, status=403)
     if isinstance(destination, upload_destination.Skip):
         _audit_file_send(leg="slack", outcome="skipped", error=destination.reason)
         return web.json_response({"ok": True, "skipped": destination.reason})
@@ -914,9 +935,7 @@ async def api_channel_upload_file(request: web.Request) -> web.Response:
         downstream=link.channel_type,
         resources=f"channel_type={link.channel_type} file={body.get('file_path', '')}",
     )
-    return web.json_response(
-        {"ok": True, "delivered": True, "channel_type": link.channel_type}
-    )
+    return web.json_response({"ok": True, "delivered": True, "channel_type": link.channel_type})
 
 
 async def api_upload(request: web.Request) -> web.Response:
@@ -1061,9 +1080,7 @@ _ALLOWED_VIDEO_EXT = {".mp4", ".m4v", ".mov", ".webm"}
 #: only: naming the video set to an audio upload (``.m4a``) would tell its
 #: sender to re-encode audio into a video container, which is worse than the
 #: bare refusal.
-_VIDEO_HINT_EXT = frozenset(
-    {".mkv", ".ogv", ".avi", ".mpg", ".mpeg", ".wmv", ".flv", ".3gp"}
-)
+_VIDEO_HINT_EXT = frozenset({".mkv", ".ogv", ".avi", ".mpg", ".mpeg", ".wmv", ".flv", ".3gp"})
 #: Media type :func:`_sniff_media_type` must report for the claimed video
 #: extension. The MP4 family (mp4/m4v/mov) all carry a ``ftyp`` box at offset 4
 #: and sniff as ``video/mp4``; QuickTime's brand differs but the box does not.
@@ -1564,15 +1581,29 @@ async def api_directory_upload(request: web.Request) -> web.Response:
     not cover.
 
     Windows cannot pin a directory descriptor at all (no ``O_NOFOLLOW`` +
-    ``dir_fd`` support -- see ``pinned_fs.supports_pinned_walk``), so there the
-    ancestor-swap protection above is NOT available; what remains, and is
-    verified by this module's own tests, is the by-name existing-target check
-    via ``platform_compat.is_link_or_junction`` (catches a planted symlink OR
-    junction at the final name, which ``path.is_symlink()`` alone would miss)
-    and ``atomic_write``'s by-name temp-then-rename, which still makes a short
-    write or ``ENOSPC`` leave the original untouched. This mirrors the documented
-    residual in ``pinned_fs.write_file_pinned``: the everywhere-floor is
-    "a planted NAME is never followed," not "no same-process race exists."
+    ``dir_fd`` support -- see ``pinned_fs.supports_pinned_walk``), so the
+    ancestor-swap protection above is NOT available in that FORM there -- but
+    the property it buys IS still available, through a different primitive:
+    ``platform_compat.pin_directory(target_dir)`` opens a handle without
+    ``FILE_SHARE_DELETE``, and Windows refuses to rename or delete that
+    directory OR ANY DIRECTORY ABOVE IT for as long as the handle stays open
+    (see ``TestPinDirectory::test_a_pinned_directory_cannot_be_renamed_or_removed``
+    in ``test_platform_compat.py``). Held across the whole classify-then-
+    publish below, an ancestor cannot be swapped for a junction while this
+    handler runs, so the SAME by-name classification and publish the POSIX
+    floor already uses become safe on Windows too -- ``platform_compat.
+    is_link_or_junction`` still catches a planted symlink OR junction at the
+    final name (which ``path.is_symlink()`` alone would miss), and
+    ``atomic_write``'s temp-then-rename (or, where hard links are
+    unsupported, ``platform_compat.rename_noreplace``) still makes a short
+    write or ``ENOSPC`` leave the original untouched. Where NEITHER
+    ancestor-pinning primitive exists on a platform (unreachable in the
+    current CI matrix: every one of Linux/macOS/Windows takes one branch or
+    the other), the upload refuses outright with ``ancestor_pin_unsupported``
+    rather than publish with no ancestor guard at all. This mirrors the
+    documented residual in ``pinned_fs.write_file_pinned``: the
+    everywhere-floor is "a planted NAME is never followed," not "no
+    same-process race exists."
     """
     caller = request.get("user", "dashboard")
     raw_dir = request.query.get("dir", "").strip()
@@ -1607,13 +1638,32 @@ async def api_directory_upload(request: web.Request) -> web.Response:
             return web.json_response({"error": message, "code": code}, status=409)
         if status == 413:
             return web.json_response({"error": message, "code": code}, status=413)
+        if status == 501:
+            return web.json_response({"error": message, "code": code}, status=501)
         raise ValueError(f"api_directory_upload._denied: unhandled status {status!r}")
 
     if not raw_dir:
         return _denied("missing_required_fields", "dir is required", 400)
 
-    target_dir = _validate_dashboard_path(raw_dir)
-    if not target_dir or not os.path.isdir(target_dir):
+    def _validate_directory(raw: str) -> str | None:
+        """``_validate_dashboard_path`` plus the existence check, off the loop.
+
+        Both are blocking filesystem calls -- ``validate_file_path`` resolves
+        ``realpath`` and walks ``is_sensitive_path``'s candidate forms,
+        ``os.path.isdir`` is a ``stat`` -- and AUTOSDE's
+        ``no-blocking-call-on-event-loop`` rule (``blocking: true``) requires
+        them off the loop: a stalled network-mounted ``dir`` resolving or
+        stat-ing directly on the gateway's own event loop freezes every other
+        request and the heartbeat with it, for exactly as long as that mount
+        takes to time out.
+        """
+        validated = _validate_dashboard_path(raw)
+        if not validated or not os.path.isdir(validated):
+            return None
+        return validated
+
+    target_dir = await asyncio.to_thread(_validate_directory, raw_dir)
+    if not target_dir:
         return _denied(
             "invalid_directory", "invalid or forbidden directory", 400, resources=raw_dir
         )
@@ -1625,9 +1675,11 @@ async def api_directory_upload(request: web.Request) -> web.Response:
 
     filename = part.filename or "upload"
     # Strip any directory components the client sent (Path.name) -- the only
-    # traversal-relevant sanitization a filename needs, since the destination
-    # is joined against the validated target_dir below and re-checked with
-    # is_relative_to before the write.
+    # traversal-relevant sanitization a filename needs. It also means `dest`
+    # below (`target_dir / safe_name`) is LEXICALLY always a direct child of
+    # `target_dir`: safe_name never carries a `/` or a `..` segment, so there
+    # is nothing left for a resolve()-based containment check to catch that
+    # candidate_dest's own re-validation just below does not already cover.
     safe_name = Path(filename).name
     if not safe_name or safe_name in (".", "..") or "\x00" in safe_name:
         return _denied("invalid_filename", "invalid filename", 400, resources=filename)
@@ -1643,8 +1695,9 @@ async def api_directory_upload(request: web.Request) -> web.Response:
     # part of it was already validated. Checked before the extension check
     # and before any byte of the body is read, so a sensitive destination is
     # refused as cheaply as every other early rejection in this handler.
+    # Off the loop for the same reason target_dir's own validation is above.
     candidate_dest = os.path.join(target_dir, safe_name)
-    if not _validate_dashboard_path(candidate_dest):
+    if not await asyncio.to_thread(_validate_dashboard_path, candidate_dest):
         return _denied(
             "sensitive_destination",
             "destination path is not allowed",
@@ -1685,9 +1738,14 @@ async def api_directory_upload(request: web.Request) -> web.Response:
             resources=filename,
         )
 
+    # No dest.resolve().is_relative_to(target_dir) check here: safe_name is
+    # already traversal-free (see its own comment above), so dest is
+    # LEXICALLY always a direct child of target_dir, and candidate_dest --
+    # the identical path -- was already re-validated through
+    # _validate_dashboard_path above. A resolve()-based containment check
+    # would add nothing that check does not already cover, while adding two
+    # more blocking realpath walks directly on the event loop.
     dest = Path(target_dir) / safe_name
-    if not dest.resolve().is_relative_to(Path(target_dir).resolve()):
-        return _denied("path_not_allowed", "invalid destination path", 400, resources=filename)
 
     def _write() -> str | None:
         """Publish ``raw`` at ``dest``, ancestor-pinned and short-write-safe.
@@ -1733,6 +1791,7 @@ async def api_directory_upload(request: web.Request) -> web.Response:
         """
         pinned = pinned_fs.supports_pinned_walk() and pinned_parent_replace_supported()
         dir_fd: int | None = None
+        ancestor_guard_fd: int | None = None
         if pinned:
             try:
                 dir_fd = pinned_fs.pin_parent(target_dir, what="upload target directory")
@@ -1740,6 +1799,43 @@ async def api_directory_upload(request: web.Request) -> web.Response:
                 return "symlink_refused"
             except OSError:
                 return "invalid_directory"
+        elif platform_compat.IS_WINDOWS:
+            # Windows has no O_NOFOLLOW + dir_fd combination to pin a PARENT
+            # CHAIN with (pinned_fs.supports_pinned_walk() is False there),
+            # so the by-name classification and publish below are, on their
+            # own, exactly the by-name write an ancestor swapped for a
+            # junction after _validate_dashboard_path could still redirect --
+            # reaching a keystone leaf would be a governance-ceiling bypass,
+            # which AGENTS.md treats as absolute. platform_compat.pin_directory
+            # closes that window a different way: the handle it returns is
+            # opened WITHOUT FILE_SHARE_DELETE, and for as long as it stays
+            # open, Windows refuses to rename OR delete the directory it
+            # names -- NOR ANY DIRECTORY ABOVE IT (its own docstring; pinned
+            # by TestPinDirectory::
+            # test_a_pinned_directory_cannot_be_renamed_or_removed in
+            # test_platform_compat.py). Held across the whole classify-then-
+            # publish below, an ancestor cannot be swapped for a junction
+            # while this handle lives, so the SAME by-name resolution the
+            # POSIX floor already uses becomes safe here too. The open itself
+            # refuses a reparse point already sitting at target_dir's own
+            # name, so a swap that landed exactly there is caught right here
+            # rather than pinned in the junction's place.
+            try:
+                ancestor_guard_fd = platform_compat.pin_directory(target_dir)
+            except OSError:
+                return "symlink_refused"
+        else:
+            # Neither ancestor-pinning primitive exists on this platform: no
+            # descriptor-relative walk (POSIX without O_NOFOLLOW/dir_fd
+            # support) and no Windows handle-based anti-rename lock either.
+            # Publishing by name here would be an unguarded ancestor-swap
+            # window with no mitigation at all, so this refuses the upload
+            # outright rather than risk a write landing wherever an ancestor
+            # was swapped to -- including a keystone leaf. In the current CI
+            # matrix (Linux, macOS, Windows) this branch is unreachable: all
+            # three either satisfy `pinned` above or are Windows, which takes
+            # the branch above instead.
+            return "ancestor_pin_unsupported"
         try:
             # 'missing' | 'symlink' | 'dir' | 'file' for whatever currently
             # sits at the destination name. Through the pinned descriptor on
@@ -1798,6 +1894,15 @@ async def api_directory_upload(request: web.Request) -> web.Response:
                     atomic_write(dest, raw, fsync=True, parent_dir_fd=dir_fd, create_only=True)
                 except FileExistsError:
                     return "name_collision"
+                except NotImplementedError:
+                    # atomic_write's create_only publish refused rather than
+                    # fall back to an unsafe unconditional replace: hard
+                    # links are unsupported at this destination AND no
+                    # atomic no-replace rename is available either (see its
+                    # own docstring). Reported distinctly from
+                    # invalid_directory -- the directory itself is fine, this
+                    # specific publish cannot be done safely.
+                    return "atomic_create_unsupported"
                 return None
 
             # kind == "file" and overwrite: carry the existing file's mode
@@ -1828,6 +1933,8 @@ async def api_directory_upload(request: web.Request) -> web.Response:
         finally:
             if dir_fd is not None:
                 os.close(dir_fd)
+            if ancestor_guard_fd is not None:
+                os.close(ancestor_guard_fd)
 
     outcome = await asyncio.to_thread(_write)
     if outcome == "name_collision":
@@ -1851,6 +1958,22 @@ async def api_directory_upload(request: web.Request) -> web.Response:
     if outcome == "invalid_directory":
         return _denied(
             "invalid_directory", "invalid or forbidden directory", 400, resources=str(dest)
+        )
+    if outcome == "atomic_create_unsupported":
+        return _denied(
+            "atomic_create_unsupported",
+            "this destination cannot safely guarantee create-only semantics "
+            "(no hard-link or atomic no-replace rename support here)",
+            501,
+            resources=str(dest),
+        )
+    if outcome == "ancestor_pin_unsupported":
+        return _denied(
+            "ancestor_pin_unsupported",
+            "this platform cannot guard the upload directory's ancestors "
+            "against being swapped mid-request",
+            501,
+            resources=str(dest),
         )
 
     _sel().log_api_access(
@@ -2231,8 +2354,7 @@ async def api_workspaces_update(request: web.Request) -> web.Response:
         # Resolved for validation only; is_relative_to + is_sensitive_path guard
         # below reject traversals before the value is stored in config.
         resolved = (  # lgtm[py/path-injection]
-            Path(new_dir).expanduser().resolve() if _abs
-            else (data_home() / new_dir).resolve()
+            Path(new_dir).expanduser().resolve() if _abs else (data_home() / new_dir).resolve()
         )
         if is_sensitive_path(str(resolved)):
             _sel().log_api_access(
@@ -2264,10 +2386,13 @@ async def api_workspaces_update(request: web.Request) -> web.Response:
                 {"error": "Cannot use config root as workspace directory"}, status=400
             )
         existing_dirs = {
-            (data_home() / ws.dir).resolve()
-            if not Path(ws.dir).expanduser().is_absolute()
-            else Path(ws.dir).expanduser().resolve()
-            for n, ws in cfg.workspaces.items() if n != name
+            (
+                (data_home() / ws.dir).resolve()
+                if not Path(ws.dir).expanduser().is_absolute()
+                else Path(ws.dir).expanduser().resolve()
+            )
+            for n, ws in cfg.workspaces.items()
+            if n != name
         }
         if resolved in existing_dirs:
             return web.json_response(
@@ -2307,9 +2432,7 @@ async def api_workspaces_update(request: web.Request) -> web.Response:
         await run_config_write(update_config_locked, mutate=_mutate_update)
     except _WorkspaceConflict as conflict:
         if conflict.status == 404:
-            return web.json_response(
-                {"error": conflict.error, "code": conflict.code}, status=404
-            )
+            return web.json_response({"error": conflict.error, "code": conflict.code}, status=404)
         return web.json_response({"error": conflict.error, "code": conflict.code}, status=409)
     _sel().log_api_access(
         caller=request.get("user", "dashboard"),
@@ -2768,8 +2891,11 @@ def _open_checked(
     def _log(outcome: str, res: str, error: str = "") -> None:
         kw = {"error": error} if error else {}
         _sel().log_tool_invocation(
-            session_key="dashboard", tool_name=tool_name,
-            outcome=outcome, resources=res, **kw,
+            session_key="dashboard",
+            tool_name=tool_name,
+            outcome=outcome,
+            resources=res,
+            **kw,
         )
 
     checked = _open_checked_file(raw_path, tool_name=tool_name)
@@ -2782,25 +2908,19 @@ def _open_checked(
             )
         if code == "sensitive_path":
             _log("denied", res, "sensitive_path")
-            return _OpenRefusal(
-                web.json_response({"error": "sensitive path blocked"}, status=403)
-            )
+            return _OpenRefusal(web.json_response({"error": "sensitive path blocked"}, status=403))
         if code == "not_found":
             _log("not_found", res)
             return _OpenRefusal(web.json_response({"error": "not found"}, status=404))
         if code == "symlink_refused":
             _log("denied", res, "symlink_rejected")
-            return _OpenRefusal(
-                web.json_response({"error": "symlinks not allowed"}, status=403)
-            )
+            return _OpenRefusal(web.json_response({"error": "symlinks not allowed"}, status=403))
         if code == "file_too_large":
             # Reachable only through a caller that passes fstat_cap; mapped so
             # a policy refusal can never masquerade as the 500 below.
             _log("denied", res, "file_too_large")
             return _OpenRefusal(
-                web.json_response(
-                    {"error": "file too large", "code": "file_too_large"}, status=413
-                )
+                web.json_response({"error": "file too large", "code": "file_too_large"}, status=413)
             )
         # read_failed: the residual code. (This envelope's own size guard is
         # the bounded read below, because an fstat pre-check races a
@@ -2823,9 +2943,7 @@ def _open_checked(
         return _OpenRefusal(web.json_response({"error": "cannot read file"}, status=500))
     if len(data) > max_bytes:
         _log("denied", path, "file_too_large")
-        return _OpenRefusal(
-            web.json_response({"error": "file too large"}, status=413)
-        )
+        return _OpenRefusal(web.json_response({"error": "file too large"}, status=413))
 
     return _OpenedFile(path=path, data=data)
 
@@ -2859,19 +2977,23 @@ async def api_file_download(request: web.Request) -> web.Response:
         raw_path, _resolve_err = _resolve_project_relative(raw_path)
         if _resolve_err == "cannot_resolve":
             return web.json_response(
-                {"error": "cannot resolve: no project dir configured"}, status=400,
+                {"error": "cannot resolve: no project dir configured"},
+                status=400,
             )
         if _resolve_err == "outside_project":
             return web.json_response(
-                {"error": "path outside project directory"}, status=400,
+                {"error": "path outside project directory"},
+                status=400,
             )
 
     try:
         validate_tool_args({"path": raw_path}, FILE_READ_SCHEMA)
     except ValidationError:
         _sel().log_tool_invocation(
-            session_key="dashboard", tool_name="file_download",
-            outcome="denied", resources=raw_path,
+            session_key="dashboard",
+            tool_name="file_download",
+            outcome="denied",
+            resources=raw_path,
         )
         return web.json_response({"error": "invalid input"}, status=400)
 
@@ -2880,7 +3002,10 @@ async def api_file_download(request: web.Request) -> web.Response:
     # to a worker thread: the envelope is synchronous file I/O (realpath, open,
     # fstat, full read up to the cap) and must not block the event loop.
     opened = await asyncio.to_thread(
-        _open_checked, raw_path, tool_name="file_download", max_bytes=_MAX_UPLOAD_BYTES,
+        _open_checked,
+        raw_path,
+        tool_name="file_download",
+        max_bytes=_MAX_UPLOAD_BYTES,
     )
     if isinstance(opened, _OpenRefusal):
         return opened.response
@@ -2907,11 +3032,15 @@ async def api_file_download(request: web.Request) -> web.Response:
     scrubbed = redact(text)
     if scrubbed != text:
         _sel().log_tool_invocation(
-            session_key="dashboard", tool_name="file_download",
-            outcome="denied", resources=path, error="content_redacted",
+            session_key="dashboard",
+            tool_name="file_download",
+            outcome="denied",
+            resources=path,
+            error="content_redacted",
         )
         return web.json_response(
-            {"error": "file content was redacted; download aborted"}, status=400,
+            {"error": "file content was redacted; download aborted"},
+            status=400,
         )
 
     safe_name = urllib.parse.quote(os.path.basename(path), safe="")
@@ -2920,8 +3049,10 @@ async def api_file_download(request: web.Request) -> web.Response:
         content_type = "application/octet-stream"
 
     _sel().log_tool_invocation(
-        session_key="dashboard", tool_name="file_download",
-        outcome="success", resources=path,
+        session_key="dashboard",
+        tool_name="file_download",
+        outcome="success",
+        resources=path,
     )
     return web.Response(
         body=data,
@@ -2989,8 +3120,11 @@ async def api_file_office_preview(request: web.Request) -> web.Response:
     def _log(outcome: str, res: str, error: str = "") -> None:
         kw = {"error": error} if error else {}
         _sel().log_tool_invocation(
-            session_key="dashboard", tool_name="file_office_preview",
-            outcome=outcome, resources=res, **kw,
+            session_key="dashboard",
+            tool_name="file_office_preview",
+            outcome=outcome,
+            resources=res,
+            **kw,
         )
 
     # Resolve relative paths against project dir when resolve=1. Uses the
@@ -3132,12 +3266,14 @@ async def api_file_office_preview(request: web.Request) -> web.Response:
         if code == "invalid_path":
             _log("denied", res)
             return web.json_response(
-                {"error": "invalid or forbidden path", "code": "forbidden_path"}, status=400,
+                {"error": "invalid or forbidden path", "code": "forbidden_path"},
+                status=400,
             )
         if code == "sensitive_path":
             _log("denied", res, "sensitive_path")
             return web.json_response(
-                {"error": "sensitive path blocked", "code": "sensitive_path"}, status=403,
+                {"error": "sensitive path blocked", "code": "sensitive_path"},
+                status=403,
             )
         if code == "not_found":
             _log("not_found", res)
@@ -3145,15 +3281,15 @@ async def api_file_office_preview(request: web.Request) -> web.Response:
         if code == "symlink_refused":
             _log("denied", res, "symlink_rejected")
             return web.json_response(
-                {"error": "symlinks not allowed", "code": "symlink_rejected"}, status=403,
+                {"error": "symlinks not allowed", "code": "symlink_rejected"},
+                status=403,
             )
         if code == "file_too_large":
             _log("denied", res, "file_too_large")
             return web.json_response(
                 {
                     "error": (
-                        "file too large for preview "
-                        f"(max {_MAX_UPLOAD_BYTES // 1024 // 1024}MB)"
+                        "file too large for preview " f"(max {_MAX_UPLOAD_BYTES // 1024 // 1024}MB)"
                     ),
                     "code": "file_too_large",
                 },
@@ -3162,7 +3298,8 @@ async def api_file_office_preview(request: web.Request) -> web.Response:
         # read_failed: the residual code.
         _log("failure", res)
         return web.json_response(
-            {"error": "cannot read file", "code": "file_read_failed"}, status=500,
+            {"error": "cannot read file", "code": "file_read_failed"},
+            status=500,
         )
     _log("success", res_path)
     return web.json_response(result)
@@ -3189,7 +3326,10 @@ async def api_file_raw(request: web.Request) -> web.Response:
 
     def _log(outcome: str, res: str) -> None:
         _sel().log_tool_invocation(
-            session_key="dashboard", tool_name="file_raw", outcome=outcome, resources=res,
+            session_key="dashboard",
+            tool_name="file_raw",
+            outcome=outcome,
+            resources=res,
         )
 
     # Raster types are detected by the shared sniffer
@@ -3269,12 +3409,12 @@ def _resolve_project_relative(raw: str) -> tuple[str, str | None]:
 # mime). MP4-family uses the ftyp box at offset 4 (bytes 0-3 are the box
 # size); WebM and Matroska share the EBML magic and both play in <video>.
 _MEDIA_MAGIC: tuple[tuple[int, bytes, str], ...] = (
-    (4, b"ftyp", "video/mp4"),          # mp4 / m4v / m4a / mov (BMFF family)
+    (4, b"ftyp", "video/mp4"),  # mp4 / m4v / m4a / mov (BMFF family)
     (0, b"\x1a\x45\xdf\xa3", "video/webm"),  # webm / mkv (EBML)
-    (0, b"OggS", "audio/ogg"),          # ogg audio or video; <audio>/<video> both accept
+    (0, b"OggS", "audio/ogg"),  # ogg audio or video; <audio>/<video> both accept
     (0, b"fLaC", "audio/flac"),
-    (0, b"ID3", "audio/mpeg"),          # mp3 with ID3v2 tag
-    (0, b"\xff\xfb", "audio/mpeg"),     # bare mp3 frame sync (MPEG1 layer3)
+    (0, b"ID3", "audio/mpeg"),  # mp3 with ID3v2 tag
+    (0, b"\xff\xfb", "audio/mpeg"),  # bare mp3 frame sync (MPEG1 layer3)
     (0, b"\xff\xf3", "audio/mpeg"),
     (0, b"\xff\xf2", "audio/mpeg"),
 )
@@ -3283,7 +3423,7 @@ _MEDIA_MAGIC: tuple[tuple[int, bytes, str], ...] = (
 def _sniff_media_type(header: bytes) -> str | None:
     """Return the media Content-Type for ``header`` bytes, or None."""
     for offset, magic, mime in _MEDIA_MAGIC:
-        if header[offset:offset + len(magic)] == magic:
+        if header[offset : offset + len(magic)] == magic:
             return mime
     # WAV: RIFF....WAVE compound signature (offset 8 discriminates from WebP)
     if header[:4] == b"RIFF" and header[8:12] == b"WAVE":
@@ -3301,7 +3441,7 @@ def _parse_range_header(value: str, size: int) -> tuple[int, int] | None:
     """
     if not value.startswith("bytes="):
         return None
-    spec = value[len("bytes="):]
+    spec = value[len("bytes=") :]
     if "," in spec or "-" not in spec:
         return None
     start_s, _, end_s = spec.partition("-")
@@ -3346,7 +3486,10 @@ async def api_file_stream(request: web.Request) -> web.StreamResponse:
 
     def _log(outcome: str, res: str) -> None:
         _sel().log_tool_invocation(
-            session_key="dashboard", tool_name="file_stream", outcome=outcome, resources=res,
+            session_key="dashboard",
+            tool_name="file_stream",
+            outcome=outcome,
+            resources=res,
         )
 
     raw_path = request.query.get("path", "")
@@ -3374,7 +3517,9 @@ async def api_file_stream(request: web.Request) -> web.StreamResponse:
             if resolve_err:
                 return ("refused", resolve_err, raw)
         checked = _open_checked_file(
-            raw, tool_name="file_stream", fstat_cap=_STREAM_MAX_BYTES,
+            raw,
+            tool_name="file_stream",
+            fstat_cap=_STREAM_MAX_BYTES,
             log_open_failure=False,
         )
         if isinstance(checked, _OpenDenied):
@@ -3456,13 +3601,10 @@ async def api_file_stream(request: web.Request) -> web.StreamResponse:
             )
         if code == "content_redacted":
             return web.json_response(
-                {"error": "file content was redacted; stream aborted",
-                 "code": "content_redacted"},
+                {"error": "file content was redacted; stream aborted", "code": "content_redacted"},
                 status=400,
             )
-        return web.json_response(
-            {"error": "cannot read file", "code": "read_failed"}, status=500
-        )
+        return web.json_response({"error": "cannot read file", "code": "read_failed"}, status=500)
     _, f, size, content_type, path = result
 
     try:
@@ -3773,7 +3915,13 @@ async def api_file_search(request: web.Request) -> web.Response:
     if project:
         project = os.path.realpath(os.path.expanduser(project))
         if is_sensitive_path(project):
-            _sel().log_api_access(caller=caller, operation="file_search", outcome="denied", resources=project, error="sensitive path")
+            _sel().log_api_access(
+                caller=caller,
+                operation="file_search",
+                outcome="denied",
+                resources=project,
+                error="sensitive path",
+            )
             return web.json_response({"error": "Access denied"}, status=403)
         if os.path.isdir(project):
             search_roots.append(project)
@@ -3783,6 +3931,7 @@ async def api_file_search(request: web.Request) -> web.Response:
             )
     elif ws_name:
         from kiro_crew.config.loader import workspace_dir_for  # noqa: F811
+
         ws_path = str(workspace_dir_for(ws_name))
         if os.path.isdir(ws_path):
             search_roots.append(ws_path)
@@ -3812,7 +3961,13 @@ async def api_file_search(request: web.Request) -> web.Response:
     safe_roots: list[str] = []
     for r in search_roots:
         if is_sensitive_path(r):
-            _sel().log_api_access(caller=caller, operation="file_search", outcome="denied", resources=r, error="sensitive path")
+            _sel().log_api_access(
+                caller=caller,
+                operation="file_search",
+                outcome="denied",
+                resources=r,
+                error="sensitive path",
+            )
         else:
             safe_roots.append(r)
 
@@ -3823,7 +3978,12 @@ async def api_file_search(request: web.Request) -> web.Response:
         if idx and idx.is_ready and not idx.truncated:
             results = await asyncio.to_thread(idx.search, query, _fuzzy_score, max_results, kinds)
             trimmed = [{k: v for k, v in r.items() if k != "_score"} for r in results]
-            _sel().log_api_access(caller=caller, operation="file_search", outcome="allowed", resources=f"q={query} kinds={kinds} indexed=true entries={idx.entry_count} results={len(trimmed)}")
+            _sel().log_api_access(
+                caller=caller,
+                operation="file_search",
+                outcome="allowed",
+                resources=f"q={query} kinds={kinds} indexed=true entries={idx.entry_count} results={len(trimmed)}",
+            )
             return web.json_response({"results": trimmed, "root": safe_roots[0]})
 
     # Fallback: walk filesystem per request
@@ -3859,11 +4019,7 @@ async def api_file_search(request: web.Request) -> web.Response:
         wanted = {"file": want_files, "dir": want_dirs}
 
         def _done(kind: str) -> bool:
-            return (
-                not wanted[kind]
-                or walked[kind] >= max_scan
-                or len(found[kind]) >= max_collect
-            )
+            return not wanted[kind] or walked[kind] >= max_scan or len(found[kind]) >= max_collect
 
         def _full() -> bool:
             return dirs_visited >= _WALK_MAX_DIRS_VISITED or (_done("file") and _done("dir"))
@@ -3888,14 +4044,16 @@ async def api_file_search(request: web.Request) -> web.Response:
                     st = os.stat(full)
                 except OSError:
                     continue
-                found[kind].append({
-                    "path": full,
-                    "name": name,
-                    "kind": kind,
-                    "size": st.st_size if kind == "file" else 0,
-                    "mtime": int(st.st_mtime),
-                    "_score": score,
-                })
+                found[kind].append(
+                    {
+                        "path": full,
+                        "name": name,
+                        "kind": kind,
+                        "size": st.st_size if kind == "file" else 0,
+                        "mtime": int(st.st_mtime),
+                        "_score": score,
+                    }
+                )
 
         for root_dir in safe_roots:
             if _full():
@@ -3940,32 +4098,61 @@ async def api_file_search(request: web.Request) -> web.Response:
 
     # Sort by score descending, files before dirs on a tie, then shorter name, then recency
     now = time.time()
-    results.sort(key=lambda r: (
-        -r["_score"], r["kind"] == "dir", len(r["name"]), now - r["mtime"],
-    ))
+    results.sort(
+        key=lambda r: (
+            -r["_score"],
+            r["kind"] == "dir",
+            len(r["name"]),
+            now - r["mtime"],
+        )
+    )
 
     # Strip internal scoring field before response
     trimmed = [{k: v for k, v in r.items() if k != "_score"} for r in results[:max_results]]
 
-    _sel().log_api_access(caller=caller, operation="file_search", outcome="allowed", resources=f"q={query} kinds={kinds} roots={len(safe_roots)} results={len(trimmed)}")
-    return web.json_response({
-        "results": trimmed,
-        "root": safe_roots[0] if scoped and safe_roots else "",
-    })
+    _sel().log_api_access(
+        caller=caller,
+        operation="file_search",
+        outcome="allowed",
+        resources=f"q={query} kinds={kinds} roots={len(safe_roots)} results={len(trimmed)}",
+    )
+    return web.json_response(
+        {
+            "results": trimmed,
+            "root": safe_roots[0] if scoped and safe_roots else "",
+        }
+    )
 
 
 async def api_file_diff(request: web.Request) -> web.Response:
     """GET /api/file-diff?path=... — returns git diff and HEAD content for a file."""
     raw_path = request.query.get("path", "").strip()
     if not raw_path:
-        _sel().log_api_access(caller=request.get("user", "dashboard"), operation="file_diff", outcome="allowed", resources="empty_path")
+        _sel().log_api_access(
+            caller=request.get("user", "dashboard"),
+            operation="file_diff",
+            outcome="allowed",
+            resources="empty_path",
+        )
         return web.json_response({"diff": "", "original": ""})
     raw_path = os.path.realpath(os.path.expanduser(raw_path))
     if not os.path.isfile(raw_path):
-        _sel().log_api_access(caller=request.get("user", "dashboard"), operation="file_diff", outcome="allowed", resources=f"path={raw_path}", error="not_found")
+        _sel().log_api_access(
+            caller=request.get("user", "dashboard"),
+            operation="file_diff",
+            outcome="allowed",
+            resources=f"path={raw_path}",
+            error="not_found",
+        )
         return web.json_response({"diff": "", "original": ""})
     if is_sensitive_path(raw_path):
-        _sel().log_api_access(caller=request.get("user", "dashboard"), operation="file_diff", outcome="denied", resources=raw_path, error="sensitive path")
+        _sel().log_api_access(
+            caller=request.get("user", "dashboard"),
+            operation="file_diff",
+            outcome="denied",
+            resources=raw_path,
+            error="sensitive path",
+        )
         return web.json_response({"error": "Access denied"}, status=403)
 
     dirpath = os.path.dirname(raw_path)
@@ -3973,15 +4160,34 @@ async def api_file_diff(request: web.Request) -> web.Response:
     def _run() -> dict:
         # Disable textconv/filter drivers and fsmonitor to prevent code execution
         # via .gitattributes or .git/config in untrusted repos.
-        _git = ["git", "-c", "diff.textconv=", "-c", "core.attributesFile=/dev/null", "-c", "core.fsmonitor="]
+        _git = [
+            "git",
+            "-c",
+            "diff.textconv=",
+            "-c",
+            "core.attributesFile=/dev/null",
+            "-c",
+            "core.fsmonitor=",
+        ]
         _env = {**os.environ, "GIT_ATTR_NOSYSTEM": "1"}
         try:
             subprocess.run(
                 [*_git, "rev-parse", "--git-dir"],
-                cwd=dirpath, capture_output=True, text=True, encoding="utf-8",
-                errors="replace", timeout=5, check=True, env=_env,
+                cwd=dirpath,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=5,
+                check=True,
+                env=_env,
             )
-        except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError, UnicodeDecodeError):
+        except (
+            subprocess.TimeoutExpired,
+            subprocess.CalledProcessError,
+            FileNotFoundError,
+            UnicodeDecodeError,
+        ):
             # Only a failed repository preflight may claim "not a git repo":
             # the client renders not_git as "there is no baseline", which is a
             # statement about the file, not about git's health. Failures past
@@ -3992,35 +4198,68 @@ async def api_file_diff(request: web.Request) -> web.Response:
             # Get HEAD content
             root = subprocess.run(
                 [*_git, "rev-parse", "--show-toplevel"],
-                cwd=dirpath, capture_output=True, text=True, encoding="utf-8",
-                errors="replace", timeout=5, env=_env,
+                cwd=dirpath,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=5,
+                env=_env,
             ).stdout.strip()
             rel = os.path.relpath(raw_path, root)
             head = subprocess.run(
                 [*_git, "show", "--no-textconv", f"HEAD:{rel}"],
-                cwd=dirpath, capture_output=True, text=True, encoding="utf-8",
-                errors="replace", timeout=10, env=_env,
+                cwd=dirpath,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=10,
+                env=_env,
             )
             original = head.stdout if head.returncode == 0 else ""
             # Get diff
             r = subprocess.run(
                 [*_git, "diff", "--no-textconv", "--no-ext-diff", "HEAD", "--", raw_path],
-                cwd=dirpath, capture_output=True, text=True, encoding="utf-8",
-                errors="replace", timeout=10, env=_env,
+                cwd=dirpath,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=10,
+                env=_env,
             )
             diff = r.stdout.strip() if r.returncode == 0 else ""
             if not diff:
                 # Check for untracked file
                 r2 = subprocess.run(
                     [*_git, "status", "--porcelain", "--", raw_path],
-                    cwd=dirpath, capture_output=True, text=True, encoding="utf-8",
-                    errors="replace", timeout=5, env=_env,
+                    cwd=dirpath,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=5,
+                    env=_env,
                 )
                 if r2.returncode == 0 and r2.stdout.strip().startswith("??"):
                     r3 = subprocess.run(
-                        [*_git, "diff", "--no-textconv", "--no-ext-diff", "--no-index", "/dev/null", raw_path],
-                        cwd=dirpath, capture_output=True, text=True, encoding="utf-8",
-                        errors="replace", timeout=10, env=_env,
+                        [
+                            *_git,
+                            "diff",
+                            "--no-textconv",
+                            "--no-ext-diff",
+                            "--no-index",
+                            "/dev/null",
+                            raw_path,
+                        ],
+                        cwd=dirpath,
+                        capture_output=True,
+                        text=True,
+                        encoding="utf-8",
+                        errors="replace",
+                        timeout=10,
+                        env=_env,
                     )
                     diff = r3.stdout if r3.stdout else ""
                     return {"diff": diff, "original": "", "status": "untracked"}
@@ -4037,11 +4276,21 @@ async def api_file_diff(request: web.Request) -> web.Response:
                 return {"diff": "", "original": original, "status": "error"}
             status = "modified" if diff else "clean"
             return {"diff": diff, "original": original, "status": status}
-        except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError, UnicodeDecodeError):
+        except (
+            subprocess.TimeoutExpired,
+            subprocess.CalledProcessError,
+            FileNotFoundError,
+            UnicodeDecodeError,
+        ):
             return {"diff": "", "original": "", "status": "error"}
 
     result = await asyncio.to_thread(_run)
-    _sel().log_api_access(caller=request.get("user", "dashboard"), operation="file_diff", outcome="allowed", resources=f"path={raw_path}")
+    _sel().log_api_access(
+        caller=request.get("user", "dashboard"),
+        operation="file_diff",
+        outcome="allowed",
+        resources=f"path={raw_path}",
+    )
     return web.json_response(result)
 
 
@@ -4057,7 +4306,11 @@ def _browse_dirs_sync(base: str, skip: set[str]) -> list[dict]:
     dirs: list[dict] = []
     try:
         for entry in sorted(os.scandir(base), key=lambda e: e.name.lower()):
-            if entry.is_dir(follow_symlinks=True) and entry.name not in skip and not entry.name.startswith("."):
+            if (
+                entry.is_dir(follow_symlinks=True)
+                and entry.name not in skip
+                and not entry.name.startswith(".")
+            ):
                 # Resolve symlinks before the sensitivity check — a symlink in
                 # a benign dir pointing at ~/.aws would otherwise pass through.
                 if is_sensitive_path(os.path.realpath(entry.path)):
@@ -4078,7 +4331,9 @@ def _browse_files_sync(base: str, skip: set[str]) -> tuple[list[dict], list[dict
     files: list[dict] = []
     try:
         # Sort: dirs before files, then alphabetical
-        for entry in sorted(os.scandir(base), key=lambda e: (not e.is_dir(follow_symlinks=True), e.name.lower())):
+        for entry in sorted(
+            os.scandir(base), key=lambda e: (not e.is_dir(follow_symlinks=True), e.name.lower())
+        ):
             if entry.name.startswith("."):
                 continue
             # Resolve symlinks before the sensitivity check — a symlink in a
@@ -4106,11 +4361,21 @@ async def api_browse_dirs(request: web.Request) -> web.Response:
     """GET /api/browse-dirs?path=... — list subdirectories for directory browser."""
     caller = request.get("user", "dashboard")
     raw = request.query.get("path", "").strip()
-    base = os.path.realpath(os.path.expanduser(raw)) if raw else os.path.realpath(os.path.expanduser("~"))
+    base = (
+        os.path.realpath(os.path.expanduser(raw))
+        if raw
+        else os.path.realpath(os.path.expanduser("~"))
+    )
     if not os.path.isdir(base):
         return web.json_response({"error": "Not a directory", "path": base}, status=400)
     if is_sensitive_path(base):
-        _sel().log_api_access(caller=caller, operation="browse_dirs", outcome="denied", resources=base, error="sensitive path")
+        _sel().log_api_access(
+            caller=caller,
+            operation="browse_dirs",
+            outcome="denied",
+            resources=base,
+            error="sensitive path",
+        )
         return web.json_response({"error": "Access denied"}, status=403)
     skip = {".git", "node_modules", "__pycache__", ".cache", ".venv", "venv", "env", ".kirocrew", ".kiro", ".aim"}
     dirs = await asyncio.to_thread(_browse_dirs_sync, base, skip)
@@ -4254,7 +4519,7 @@ def _project_git_branch(base: str) -> dict:
         # repo, just no label.
         return out
     if raw.startswith("ref:"):
-        ref = raw[len("ref:"):].strip()
+        ref = raw[len("ref:") :].strip()
         prefix = "refs/heads/"
         if ref.startswith(prefix) and len(ref) > len(prefix):
             # Branch names are attacker/agent-controllable content that this route
@@ -4262,7 +4527,7 @@ def _project_git_branch(base: str) -> dict:
             # canonical egress redaction like any other echoed string. Ordinary
             # branch names are unchanged; one that embeds something matching a
             # credential pattern is masked rather than displayed.
-            out["branch"] = redact(ref[len(prefix):])
+            out["branch"] = redact(ref[len(prefix) :])
         return out
     # A bare object id in HEAD means detached (mid-rebase, bisect, explicit
     # --detach). Surface a short form so the caller shows something truthful
@@ -4319,9 +4584,7 @@ async def api_project_git(request: web.Request) -> web.Response:
     raw = request.query.get("path", "").strip()
     if not raw:
         return web.json_response({"error": "path required"}, status=400)
-    project = await asyncio.to_thread(
-        _match_known_project_for, _slot_project_snapshot(state), raw
-    )
+    project = await asyncio.to_thread(_match_known_project_for, _slot_project_snapshot(state), raw)
     if project is None:
         _sel().log_api_access(
             caller=caller,
@@ -4336,9 +4599,7 @@ async def api_project_git(request: web.Request) -> web.Response:
         # Redacted like every other echoed path: this arm is reachable whenever a
         # known project directory is deleted or replaced between the allow-list
         # match and the stat, so it is a live egress surface, not a dead branch.
-        return web.json_response(
-            {"error": "Not a directory", "path": redact(base)}, status=400
-        )
+        return web.json_response({"error": "Not a directory", "path": redact(base)}, status=400)
     if status == "sensitive":
         _sel().log_api_access(
             caller=caller,
@@ -4348,9 +4609,7 @@ async def api_project_git(request: web.Request) -> web.Response:
             error="sensitive path",
         )
         return web.json_response({"error": "Access denied"}, status=403)
-    _sel().log_api_access(
-        caller=caller, operation="project_git", outcome="allowed", resources=base
-    )
+    _sel().log_api_access(caller=caller, operation="project_git", outcome="allowed", resources=base)
     # The SEL audit above records the real path; the response body is an egress
     # surface the dashboard renders, so the echoed path is redacted like the rest.
     return web.json_response({"path": redact(base), **info})
@@ -4366,16 +4625,30 @@ async def api_browse_files(request: web.Request) -> web.Response:
     """
     caller = request.get("user", "dashboard")
     raw = request.query.get("path", "").strip()
-    base = os.path.realpath(os.path.expanduser(raw)) if raw else os.path.realpath(os.path.expanduser("~"))
+    base = (
+        os.path.realpath(os.path.expanduser(raw))
+        if raw
+        else os.path.realpath(os.path.expanduser("~"))
+    )
     if not os.path.isdir(base):
         return web.json_response({"error": "Not a directory", "path": base}, status=400)
     if is_sensitive_path(base):
-        _sel().log_api_access(caller=caller, operation="browse_files", outcome="denied", resources=base, error="sensitive path")
+        _sel().log_api_access(
+            caller=caller,
+            operation="browse_files",
+            outcome="denied",
+            resources=base,
+            error="sensitive path",
+        )
         return web.json_response({"error": "Access denied"}, status=403)
     skip = {".git", "node_modules", "__pycache__", ".cache", ".venv", "venv", "env", ".kirocrew", ".kiro", ".aim", "build", "dist", ".next"}
     dirs, files = await asyncio.to_thread(_browse_files_sync, base, skip)
-    _sel().log_api_access(caller=caller, operation="browse_files", outcome="allowed", resources=base)
-    return web.json_response({"path": base, "parent": os.path.dirname(base), "dirs": dirs, "files": files})
+    _sel().log_api_access(
+        caller=caller, operation="browse_files", outcome="allowed", resources=base
+    )
+    return web.json_response(
+        {"path": base, "parent": os.path.dirname(base), "dirs": dirs, "files": files}
+    )
 
 
 async def api_dashboard_config(request: web.Request) -> web.Response:
@@ -4427,7 +4700,23 @@ async def api_dashboard_config(request: web.Request) -> web.Response:
             )
             return body_err
         assert body is not None  # read_bounded_json returns (dict, None) on success
-        _allowed = {"restore_sessions", "restore_window_minutes", "merge_queued_messages", "default_memory_mode", "widget_density", "use_builtin_browser", "verbosity", "quick_send", "session_grid", "tail_fork_enabled", "link_previews", "mcp_app_panel", "auto_open_git_panel", "folder_suggestions_enabled", "session_card_source_links"}
+        _allowed = {
+            "restore_sessions",
+            "restore_window_minutes",
+            "merge_queued_messages",
+            "default_memory_mode",
+            "widget_density",
+            "use_builtin_browser",
+            "verbosity",
+            "quick_send",
+            "session_grid",
+            "tail_fork_enabled",
+            "link_previews",
+            "mcp_app_panel",
+            "auto_open_git_panel",
+            "folder_suggestions_enabled",
+            "session_card_source_links",
+        }
         # One-release backward-compat shim for removed key; delete after all clients update.
         deprecated_ignored_keys = {"tail_fork_head_handling"}
         # Read-only keys the GET exposes: both settings surfaces save with
@@ -4535,8 +4824,7 @@ async def api_dashboard_config(request: web.Request) -> web.Response:
                 return web.json_response(
                     {
                         "error": (
-                            "verbosity must be 'default', 'concise', 'ultra' "
-                            "or 'answer_only'"
+                            "verbosity must be 'default', 'concise', 'ultra' " "or 'answer_only'"
                         )
                     },
                     status=400,
@@ -4586,9 +4874,7 @@ async def api_dashboard_config(request: web.Request) -> web.Response:
                 _sel().log_tool_invocation(
                     session_key="dashboard", tool_name="dashboard_config_write", outcome="failure"
                 )
-                return web.json_response(
-                    {"error": "quick_send must be a boolean"}, status=400
-                )
+                return web.json_response({"error": "quick_send must be a boolean"}, status=400)
             updates["quick_send"] = val
         if "session_grid" in body:
             val = body["session_grid"]
@@ -4596,9 +4882,7 @@ async def api_dashboard_config(request: web.Request) -> web.Response:
                 _sel().log_tool_invocation(
                     session_key="dashboard", tool_name="dashboard_config_write", outcome="failure"
                 )
-                return web.json_response(
-                    {"error": "session_grid must be a boolean"}, status=400
-                )
+                return web.json_response({"error": "session_grid must be a boolean"}, status=400)
             updates["session_grid"] = val
         if "mcp_app_panel" in body:
             val = body["mcp_app_panel"]
@@ -4931,10 +5215,10 @@ def _vet_zip_eocd(data: bytes) -> None:
         )
     except ZipInventoryRejected as exc:
         if exc.reason in ("missing_eocd", "truncated_eocd", "unreadable"):
-            raise _SheetRefusal(
-                415, "not an OOXML spreadsheet", "not_a_spreadsheet") from exc
+            raise _SheetRefusal(415, "not an OOXML spreadsheet", "not_a_spreadsheet") from exc
         raise _SheetRefusal(
-            413, "workbook expands too large", "workbook_expands_too_large") from exc
+            413, "workbook expands too large", "workbook_expands_too_large"
+        ) from exc
 
 
 def _parse_workbook_grid(data: bytes) -> dict:
@@ -4995,7 +5279,8 @@ def _parse_workbook_grid(data: bytes) -> dict:
                         text_chars += len(cell)
                         if text_chars > _SHEET_MAX_TEXT_CHARS:
                             raise _SheetRefusal(
-                                413, "workbook text too large to preview",
+                                413,
+                                "workbook text too large to preview",
                                 "workbook_text_too_large",
                             )
                     out.append(cell)
@@ -5011,14 +5296,16 @@ def _parse_workbook_grid(data: bytes) -> dict:
                     w -= 1
                 width = max(width, w)
             rows = [r[:width] + [None] * (width - len(r[:width])) for r in raw] if width else []
-            sheets.append({
-                # Names take the same redact+truncate path as cell text — a
-                # crafted workbook.xml can carry arbitrarily long sheet names.
-                "name": _sheet_cell_json(name),
-                "rows": rows,
-                "truncated_rows": rows_truncated,
-                "truncated_cols": cols_truncated,
-            })
+            sheets.append(
+                {
+                    # Names take the same redact+truncate path as cell text — a
+                    # crafted workbook.xml can carry arbitrarily long sheet names.
+                    "name": _sheet_cell_json(name),
+                    "rows": rows,
+                    "truncated_rows": rows_truncated,
+                    "truncated_cols": cols_truncated,
+                }
+            )
         return {
             "sheets": sheets,
             "total_sheets": len(names),
@@ -5046,7 +5333,10 @@ async def api_file_sheet(request: web.Request) -> web.Response:
 
     def _log(outcome: str, res: str) -> None:
         _sel().log_tool_invocation(
-            session_key="dashboard", tool_name="file_sheet", outcome=outcome, resources=res,
+            session_key="dashboard",
+            tool_name="file_sheet",
+            outcome=outcome,
+            resources=res,
         )
 
     raw_path = request.query.get("path", "")
@@ -5067,7 +5357,9 @@ async def api_file_sheet(request: web.Request) -> web.Response:
         """
         nonlocal res_path
         checked = _open_checked_file(
-            raw_path, tool_name="file_sheet", log_open_failure=False,
+            raw_path,
+            tool_name="file_sheet",
+            log_open_failure=False,
         )
         if isinstance(checked, _OpenDenied):
             return checked
@@ -5160,7 +5452,10 @@ _GIT_PANEL_STDOUT_CAP = 8 * 1024 * 1024
 
 
 def _run_git_bounded(
-    args: list[str], cwd: str, env: dict, timeout: float,
+    args: list[str],
+    cwd: str,
+    env: dict,
+    timeout: float,
     cap: int = _GIT_PANEL_STDOUT_CAP,
 ) -> tuple[int, str, bool]:
     """Run git capturing at most ``cap`` bytes of stdout.
@@ -5185,8 +5480,11 @@ def _run_git_bounded(
     try:
         try:
             proc = popen_limited(
-                argv, cwd=cwd, env=env,
-                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                argv,
+                cwd=cwd,
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
             )
         except OSError:
             # The cwd (project dir) can vanish between the handler's isdir
@@ -5244,8 +5542,7 @@ def _porcelain_unquote(path: str) -> str:
     body = path[1:-1]
     out = bytearray()
     i = 0
-    escapes = {"n": 10, "t": 9, "r": 13, "a": 7, "b": 8, "f": 12, "v": 11,
-               "\\": 92, '"': 34}
+    escapes = {"n": 10, "t": 9, "r": 13, "a": 7, "b": 8, "f": 12, "v": 11, "\\": 92, '"': 34}
     while i < len(body):
         ch = body[i]
         if ch != "\\":
@@ -5258,8 +5555,8 @@ def _porcelain_unquote(path: str) -> str:
         if nxt in escapes:
             out.append(escapes[nxt])
             i += 2
-        elif nxt.isdigit() and i + 3 < len(body) + 1 and body[i + 1:i + 4].isdigit():
-            out.append(int(body[i + 1:i + 4], 8) & 0xFF)
+        elif nxt.isdigit() and i + 3 < len(body) + 1 and body[i + 1 : i + 4].isdigit():
+            out.append(int(body[i + 1 : i + 4], 8) & 0xFF)
             i += 4
         else:
             return path
@@ -5271,9 +5568,7 @@ def _porcelain_unquote(path: str) -> str:
 # ``-c`` cannot neutralize arbitrary driver names, so a repo declaring one is
 # refused outright — the same fail-closed stance as worktree.py's
 # ``_checkout_filter``.
-_GIT_FILTER_KEY_RE = re.compile(
-    r"^filter\..+\.(process|smudge|clean)$", re.IGNORECASE
-)
+_GIT_FILTER_KEY_RE = re.compile(r"^filter\..+\.(process|smudge|clean)$", re.IGNORECASE)
 
 
 def _repo_declares_filter_driver(git_cmd: list[str], base: str, env: dict) -> bool:
@@ -5294,14 +5589,18 @@ def _repo_declares_filter_driver(git_cmd: list[str], base: str, env: dict) -> bo
     scopes = ["--local"]
     ext_rc, ext_out, _ = _run_git_bounded(
         [*git_cmd, "config", "--bool", "--get", "extensions.worktreeConfig"],
-        cwd=base, env=env, timeout=5,
+        cwd=base,
+        env=env,
+        timeout=5,
     )
     if ext_rc == 0 and ext_out.strip() == "true":
         scopes.append("--worktree")
     for scope in scopes:
         rc, out, _ = _run_git_bounded(
             [*git_cmd, "config", scope, "--includes", "--name-only", "--list"],
-            cwd=base, env=env, timeout=5,
+            cwd=base,
+            env=env,
+            timeout=5,
         )
         if rc != 0:
             return True
@@ -5322,9 +5621,7 @@ async def api_project_git_status(request: web.Request) -> web.Response:
     raw = request.query.get("path", "").strip()
     if not raw:
         return web.json_response({"error": "path required", "code": "path_required"}, status=400)
-    project = await asyncio.to_thread(
-        _match_known_project_for, _slot_project_snapshot(state), raw
-    )
+    project = await asyncio.to_thread(_match_known_project_for, _slot_project_snapshot(state), raw)
     if project is None:
         _sel().log_api_access(
             caller=caller,
@@ -5333,11 +5630,11 @@ async def api_project_git_status(request: web.Request) -> web.Response:
             resources=raw,
             error="not a known project directory",
         )
-        return web.json_response({"error": "Unknown project directory", "code": "unknown_project_dir"}, status=403)
+        return web.json_response(
+            {"error": "Unknown project directory", "code": "unknown_project_dir"}, status=403
+        )
 
-    base = await asyncio.to_thread(
-        lambda: os.path.realpath(os.path.expanduser(project))
-    )
+    base = await asyncio.to_thread(lambda: os.path.realpath(os.path.expanduser(project)))
     # Both probes stat the filesystem (a stalled network mount would block the
     # event loop), so they run in a worker thread like the realpath above.
     if await asyncio.to_thread(is_sensitive_path, base):
@@ -5360,21 +5657,29 @@ async def api_project_git_status(request: web.Request) -> web.Response:
     def _run() -> dict:
         _git_cmd = [
             "git",
-            "-c", "diff.textconv=",
-            "-c", "core.attributesFile=/dev/null",
-            "-c", f"core.hooksPath={os.devnull}",
-            "-c", "core.fsmonitor=",
+            "-c",
+            "diff.textconv=",
+            "-c",
+            "core.attributesFile=/dev/null",
+            "-c",
+            f"core.hooksPath={os.devnull}",
+            "-c",
+            "core.fsmonitor=",
             # Repo-local .gitattributes is still consulted despite the
             # attributesFile override, so keep driver escape hatches shut and
             # emit non-ASCII paths raw (UTF-8) instead of C-quoted so the
             # panel can open them.
-            "-c", "core.quotePath=false",
+            "-c",
+            "core.quotePath=false",
         ]
         _env = {**os.environ, "GIT_ATTR_NOSYSTEM": "1"}
 
         # Check if it's a repo
         probe_rc, _probe_out, _ = _run_git_bounded(
-            [*_git_cmd, "rev-parse", "--git-dir"], cwd=base, env=_env, timeout=5,
+            [*_git_cmd, "rev-parse", "--git-dir"],
+            cwd=base,
+            env=_env,
+            timeout=5,
         )
         if probe_rc != 0:
             return {"repo": False, "files": []}
@@ -5387,14 +5692,19 @@ async def api_project_git_status(request: web.Request) -> web.Response:
 
         # Get repo root and branch info
         root_rc, root_out, _ = _run_git_bounded(
-            [*_git_cmd, "rev-parse", "--show-toplevel"], cwd=base, env=_env, timeout=5,
+            [*_git_cmd, "rev-parse", "--show-toplevel"],
+            cwd=base,
+            env=_env,
+            timeout=5,
         )
         repo_root = root_out.strip() if root_rc == 0 else base
 
         # Branch + ahead/behind via status -b
         status_rc, status_out, _ = _run_git_bounded(
             [*_git_cmd, "status", "--porcelain=v1", "-b", "--untracked-files=all"],
-            cwd=base, env=_env, timeout=10,
+            cwd=base,
+            env=_env,
+            timeout=10,
         )
         if status_rc != 0:
             return {"repo": True, "repoRoot": repo_root, "files": []}
@@ -5414,13 +5724,13 @@ async def api_project_git_status(request: web.Request) -> web.Response:
             else:
                 # Could be "## branch" or "## No commits yet on branch"
                 if header.startswith("No commits yet on "):
-                    branch = header[len("No commits yet on "):]
+                    branch = header[len("No commits yet on ") :]
                 else:
                     branch = header.split()[0] if header else None
             # Parse ahead/behind
             bracket_idx = header.find("[")
             if bracket_idx >= 0:
-                info = header[bracket_idx + 1:header.find("]")]
+                info = header[bracket_idx + 1 : header.find("]")]
                 for part in info.split(","):
                     part = part.strip()
                     if part.startswith("ahead "):
@@ -5472,9 +5782,10 @@ async def api_project_git_status(request: web.Request) -> web.Response:
         # Merge numstat for line counts (staged + unstaged vs HEAD)
         try:
             numstat_rc, numstat_out, _ = _run_git_bounded(
-                [*_git_cmd, "diff", "--numstat", "--no-textconv",
-                 "--no-ext-diff", "HEAD"],
-                cwd=base, env=_env, timeout=10,
+                [*_git_cmd, "diff", "--numstat", "--no-textconv", "--no-ext-diff", "HEAD"],
+                cwd=base,
+                env=_env,
+                timeout=10,
             )
             if numstat_rc == 0:
                 stats: dict[str, tuple[int | None, int | None]] = {}
@@ -5501,7 +5812,9 @@ async def api_project_git_status(request: web.Request) -> web.Response:
         # Status paths are repo-root-relative; when the project directory sits
         # below the repo root, every path starts with this prefix.
         rel = os.path.relpath(base, repo_root)
-        result["_prefix"] = "" if rel in (".", "") or rel.startswith("..") else rel.replace(os.sep, posixpath.sep)
+        result["_prefix"] = (
+            "" if rel in (".", "") or rel.startswith("..") else rel.replace(os.sep, posixpath.sep)
+        )
         if len(files) > 500:
             result["truncated"] = True
         if branch:
@@ -5629,9 +5942,7 @@ async def api_project_tree(request: web.Request) -> web.Response:
     raw = request.query.get("path", "").strip()
     if not raw:
         return web.json_response({"error": "path required", "code": "path_required"}, status=400)
-    project = await asyncio.to_thread(
-        _match_known_project_for, _slot_project_snapshot(state), raw
-    )
+    project = await asyncio.to_thread(_match_known_project_for, _slot_project_snapshot(state), raw)
     if project is None:
         _sel().log_api_access(
             caller=caller,
@@ -5644,9 +5955,7 @@ async def api_project_tree(request: web.Request) -> web.Response:
             {"error": "Unknown project directory", "code": "unknown_project_dir"}, status=403
         )
 
-    base = await asyncio.to_thread(
-        lambda: os.path.realpath(os.path.expanduser(project))
-    )
+    base = await asyncio.to_thread(lambda: os.path.realpath(os.path.expanduser(project)))
     if await asyncio.to_thread(is_sensitive_path, base):
         _sel().log_api_access(
             caller=caller,
@@ -5668,7 +5977,10 @@ async def api_project_tree(request: web.Request) -> web.Response:
         # project dir that is a repo SUBDIRECTORY lists only its own subtree.
         # -z: NUL separation, so no C-quoting and exotic names survive intact.
         probe_rc, _probe_out, _ = _run_git_bounded(
-            ["git", "rev-parse", "--git-dir"], cwd=base, env=os.environ.copy(), timeout=5,
+            ["git", "rev-parse", "--git-dir"],
+            cwd=base,
+            env=os.environ.copy(),
+            timeout=5,
         )
         if probe_rc == 0:
             ls_rc, ls_out, _ = _run_git_bounded(
@@ -5679,8 +5991,14 @@ async def api_project_tree(request: web.Request) -> web.Response:
                 # invocations in this module. The `rev-parse` probe above needs no
                 # such guard — it reads no index and walks no working tree.
                 [
-                    "git", "-c", "core.fsmonitor=",
-                    "ls-files", "-z", "--cached", "--others", "--exclude-standard",
+                    "git",
+                    "-c",
+                    "core.fsmonitor=",
+                    "ls-files",
+                    "-z",
+                    "--cached",
+                    "--others",
+                    "--exclude-standard",
                 ],
                 cwd=base,
                 env=os.environ.copy(),
@@ -5752,9 +6070,7 @@ async def api_project_tree(request: web.Request) -> web.Response:
     # "Duplicate path" on adjacent identical entries. dict.fromkeys keeps first
     # occurrence. This does not affect "truncated": the cap is applied to the
     # raw listing above.
-    result["paths"] = list(
-        dict.fromkeys(redact_path_segments(p, redact) for p in result["paths"])
-    )
+    result["paths"] = list(dict.fromkeys(redact_path_segments(p, redact) for p in result["paths"]))
     return web.json_response(result)
 
 
@@ -5776,9 +6092,7 @@ async def api_project_git_log(request: web.Request) -> web.Response:
     except (ValueError, TypeError):
         limit = 20
 
-    project = await asyncio.to_thread(
-        _match_known_project_for, _slot_project_snapshot(state), raw
-    )
+    project = await asyncio.to_thread(_match_known_project_for, _slot_project_snapshot(state), raw)
     if project is None:
         _sel().log_api_access(
             caller=caller,
@@ -5787,11 +6101,11 @@ async def api_project_git_log(request: web.Request) -> web.Response:
             resources=raw,
             error="not a known project directory",
         )
-        return web.json_response({"error": "Unknown project directory", "code": "unknown_project_dir"}, status=403)
+        return web.json_response(
+            {"error": "Unknown project directory", "code": "unknown_project_dir"}, status=403
+        )
 
-    base = await asyncio.to_thread(
-        lambda: os.path.realpath(os.path.expanduser(project))
-    )
+    base = await asyncio.to_thread(lambda: os.path.realpath(os.path.expanduser(project)))
     # Both probes stat the filesystem (a stalled network mount would block the
     # event loop), so they run in a worker thread like the realpath above.
     if await asyncio.to_thread(is_sensitive_path, base):
@@ -5814,21 +6128,29 @@ async def api_project_git_log(request: web.Request) -> web.Response:
     def _run() -> dict:
         _git_cmd = [
             "git",
-            "-c", "diff.textconv=",
-            "-c", "core.attributesFile=/dev/null",
-            "-c", f"core.hooksPath={os.devnull}",
-            "-c", "core.fsmonitor=",
+            "-c",
+            "diff.textconv=",
+            "-c",
+            "core.attributesFile=/dev/null",
+            "-c",
+            f"core.hooksPath={os.devnull}",
+            "-c",
+            "core.fsmonitor=",
             # Repo-local .gitattributes is still consulted despite the
             # attributesFile override, so keep driver escape hatches shut and
             # emit non-ASCII paths raw (UTF-8) instead of C-quoted so the
             # panel can open them.
-            "-c", "core.quotePath=false",
+            "-c",
+            "core.quotePath=false",
         ]
         _env = {**os.environ, "GIT_ATTR_NOSYSTEM": "1"}
 
         # Check if it's a repo
         probe_rc, _probe_out, _ = _run_git_bounded(
-            [*_git_cmd, "rev-parse", "--git-dir"], cwd=base, env=_env, timeout=5,
+            [*_git_cmd, "rev-parse", "--git-dir"],
+            cwd=base,
+            env=_env,
+            timeout=5,
         )
         if probe_rc != 0:
             return {"repo": False, "commits": []}
@@ -5842,7 +6164,10 @@ async def api_project_git_log(request: web.Request) -> web.Response:
 
         # Get HEAD sha for isHead marking
         head_rc, head_out, _ = _run_git_bounded(
-            [*_git_cmd, "rev-parse", "--short", "HEAD"], cwd=base, env=_env, timeout=5,
+            [*_git_cmd, "rev-parse", "--short", "HEAD"],
+            cwd=base,
+            env=_env,
+            timeout=5,
         )
         head_sha = head_out.strip() if head_rc == 0 else ""
 
@@ -5851,7 +6176,9 @@ async def api_project_git_log(request: web.Request) -> web.Response:
         fmt = f"%h{sep}%s{sep}%an{sep}%aI"
         log_rc, log_out, _ = _run_git_bounded(
             [*_git_cmd, "log", f"--pretty=format:{fmt}", f"-{limit}"],
-            cwd=base, env=_env, timeout=15,
+            cwd=base,
+            env=_env,
+            timeout=15,
         )
         if log_rc != 0:
             return {"repo": True, "commits": []}
@@ -5862,13 +6189,15 @@ async def api_project_git_log(request: web.Request) -> web.Response:
             if len(parts) < 4:
                 continue
             sha, message, author, date = parts
-            commits.append({
-                "sha": sha,
-                "message": message,
-                "author": author,
-                "date": date,
-                "isHead": sha == head_sha,
-            })
+            commits.append(
+                {
+                    "sha": sha,
+                    "message": message,
+                    "author": author,
+                    "date": date,
+                    "isHead": sha == head_sha,
+                }
+            )
         return {"repo": True, "commits": commits}
 
     result = await asyncio.to_thread(_run)
