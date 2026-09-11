@@ -1000,6 +1000,8 @@ _SEARCH_LIMIT_CEILING = 60
 _ALLOWED_IMAGE_EXT = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"}
 _ALLOWED_TEXT_EXT = {
     ".txt",
+    ".text",
+    ".xwiki",
     ".md",
     ".json",
     # Excalidraw scene JSON — the composer's sketch pad attaches one per

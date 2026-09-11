@@ -1434,8 +1434,21 @@ class SessionConfig:
         metadata=_meta(
             "Auto-Continue on Empty Response",
             "After the model returns an empty response twice in a row, "
-            "automatically send one 'continue' nudge on the same session "
-            "(transcript-visible, bounded to once per user message).",
+            "automatically send a 'continue' nudge on the same session "
+            "(transcript-visible, bounded by Max Auto-Continues on Empty "
+            "Response).",
+        ),
+    )
+    empty_response_max_continues: int = field(
+        default=1,
+        metadata=_meta(
+            "Max Auto-Continues on Empty Response",
+            "How many 'continue' nudges may run back to back before the "
+            "runner gives up and asks for a message (1-10). Above 1 the "
+            "recovery notice shows progress ('recovery 2 of 3'). Useful "
+            "during provider-instability windows where each continuation "
+            "makes real progress before failing the same way. Only applies "
+            "while Auto-Continue on Empty Response is enabled.",
         ),
     )
     autocompact_pct: float = field(
@@ -1638,12 +1651,11 @@ class MemoryConfig:
         default=4,
         metadata=_meta(
             "Embedding Threads",
-            "CPU threads llama.cpp may use per embedding call. Left unset, llama.cpp "
-            "sizes its batch pool from the host core count, so even a few-token embed "
-            "fans out across every core and competes with the rest of the gateway. "
-            "Embedding a short query does not need many threads; raise this only if "
-            "bulk re-embedding throughput matters more than interactive latency. "
-            "Clamped to the machine's core count.",
+            "CPU threads for an explicit memory query or user-started re-embedding. "
+            "Defaults to 4; explicit settings are honoured up to the machine's "
+            "core count. All memory stores share one model and inference worker. "
+            "V2 message context does not run an embedding search; V1 retains "
+            "its session-start retrieval.",
         ),
     )
     embedding_bulk_threads: int = field(
@@ -1654,9 +1666,10 @@ class MemoryConfig:
             "gives imported memories semantic reach, plus imports and consolidation — "
             "as opposed to a query you are waiting on. Defaults to 1: nothing waits on "
             "this work (those rows are keyword-searchable meanwhile), so it is tuned to "
-            "stay invisible rather than finish early. Raise it to get through a large "
-            "backlog sooner; interactive search keeps its own pool either way. 0 means "
-            "inherit Embedding Threads. Clamped to the machine's core count.",
+            "use fewer resources rather than finish early. Both classes share one "
+            "inference worker; waiting interactive queries take priority. 0 means "
+            "inherit Embedding Threads. Explicit settings are honoured up to "
+            "the machine's core count.",
         ),
     )
     embedding_bulk_duty: float = field(
@@ -1664,9 +1677,9 @@ class MemoryConfig:
         metadata=_meta(
             "Embedding Duty Cycle (bulk)",
             "Fraction of wall time a background embedding sweep targets for computing. "
-            "At the default 0.2 it idles four times as long as it works, so a sweep "
-            "over a freshly imported memory costs about a fifth of one core instead of "
-            "several — the same total work, spread thin enough that fans never react. "
+            "At the default 0.2 the shared worker targets an idle interval four times "
+            "as long as each bulk inference. Parallel stores share this pacing; "
+            "interactive queries can interrupt the idle interval. "
             "The sweep resumes across restarts, so it need not finish in one session. "
             "A target rather than a ceiling: one unusually slow row is capped at a "
             "30-second pause and so runs hotter than the configured share. 1.0 runs "
@@ -1726,12 +1739,16 @@ class MemoryConfig:
     )
     episodic_max_count: int = field(
         default=10_000,
-        metadata=_meta("Episodic Max Count", "Maximum total episodic memories stored."),
+        metadata=_meta(
+            "Episodic Max Count",
+            "V1 episodic storage cap. V2 retains memories without automatic capacity eviction.",
+        ),
     )
     decay_rates: dict[str, float] = field(
         default_factory=dict,
         metadata=_meta(
             "Memory Decay Rates",
+            "V1 only; V2 recall scores do not decay with age. "
             "Per-tag episodic recency decay rates, per day (retrieval score factor "
             "exp(-rate * days_old)). Keys are memory tags (case-insensitive); the "
             "reserved 'default' key replaces the built-in 0.03 for memories matching "
@@ -1759,6 +1776,31 @@ class MemoryConfig:
         default=365,
         metadata=_meta("History Max Days", "Maximum days of history to retain."),
     )
+    private_provisioning_enabled: bool = field(
+        default=True,
+        metadata=_meta(
+            "New Private Memory",
+            "Allow creating private V2 member stores and explicit V1-to-V2 setup. "
+            "Turn off to pause provisioning; existing V2 execution, management "
+            "and isolation continue.",
+        ),
+    )
+    backup_enabled: bool = field(
+        default=True,
+        metadata=_meta(
+            "Automatic Memory Backups",
+            "Take a daily rotating copy of each active member V2 store. Global and "
+            "named V1 backups remain manual. This does not delete active memories.",
+        ),
+    )
+    backup_keep: int = field(
+        default=7,
+        metadata=_meta(
+            "Memory Backups Kept",
+            "How many backups to keep per store after an automatic or requested backup. "
+            "Values below 1 are treated as 1 so retention cannot empty the directory.",
+        ),
+    )
     migrated: bool = field(
         default=False,
         metadata=_meta("Migrated", "Whether memory has been migrated to vector store."),
@@ -1780,7 +1822,7 @@ def _coerce_embedding_provider(raw: str) -> str:
     """Normalize legacy or unknown embedding_provider values.
 
     Embeddings are always-on: every value coerces to ``"llama_cpp"``. Old configs
-    may carry ``"ollama"`` (previous runtime) or ``"none"`` (previously-disabled);
+    may carry ``"ollama"`` (a retired runtime) or ``"none"`` (the disabled setting);
     both are transparently upgraded. Unknown values also coerce so a config file
     from a newer/older version never crashes.
     """
@@ -2273,7 +2315,7 @@ def _tailscale_config_from(
     genuinely unconfigured; MALFORMED is the operator having asked for a
     restriction this load cannot read, and it is recorded in *degraded* under
     :data:`DEGRADED_TAILSCALE` so the gate can deny instead of admitting every
-    tailnet peer (the shape that reopened the publish allowlist, #4057).
+    tailnet peer (the shape that reopens the publish allowlist).
 
     ``key_present`` separates the two states a bare value cannot: a MISSING
     ``tailscale`` key and one written as JSON ``null`` both arrive here as
@@ -2413,7 +2455,7 @@ def _tailscale_config_from(
         # Defaults TRUE, and a non-boolean resolves to TRUE as well: this is a
         # narrowing-only field like the two rules above, so an operator typo may
         # only ever leave the binding ON, never silently reopen the replay path
-        # the binding closes (issue #2417).
+        # the binding closes.
         bind_refresh_chains=_safe_bool(data.get("bind_refresh_chains"), True),
         keep_awake=_safe_bool(data.get("keep_awake"), True),
     )
@@ -3205,6 +3247,14 @@ class WorkspaceConfig:
 
 @dataclass
 class MemoryStoreConfig:
+    owner_member: str = field(
+        default="",
+        metadata=_meta("Owner Member", "The sole Crew Member owning this private memory store."),
+    )
+    memory_version: int = field(
+        default=1,
+        metadata=_meta("Memory Version", "1 for existing memory; 2 for private member memory."),
+    )
     description: str = field(
         default="",
         metadata=_meta("Description", "Human-readable purpose of this memory store."),
@@ -3730,7 +3780,7 @@ CHAT_TURN_TIMEOUT_MAX = 86400
 # per-server cold-start cost (observed: a 71-server agent with no pending OAuth
 # completes in ~14s; a 17-server agent behind a sandboxed per-server launcher on
 # a loaded host takes ~50s). The floor IS the default: the budget must stay
-# comfortably ABOVE the backend's 30s OAuth authorization wait (issue #2946) —
+# comfortably ABOVE the backend's 30s OAuth authorization wait —
 # a lower value recreates the session-start race the dedicated budget exists to
 # prevent, so out-of-range values clamp UP to it. The max bounds a typo'd
 # value: a session start slower than 15 minutes is pathological and should
@@ -3788,11 +3838,10 @@ AUTOCOMPACT_PCT_MIN = 5.0
 AUTOCOMPACT_PCT_MAX = 90.0
 
 # ── Load/write bound parity ────────────────────────────────────────────────────
-# Ranges for bounded numeric fields whose LOAD path previously applied no bounds
-# at all, while `_EDITABLE_CONFIG` rejected the same values at write time. A
-# hand-edited config.json goes nowhere near the dashboard API, so every one of
-# these loaded verbatim -- the same asymmetry #4688 and #4734 closed for the
-# security-relevant knobs.
+# Ranges for bounded numeric fields the LOAD path clamps, while `_EDITABLE_CONFIG`
+# rejects the same values at write time. A hand-edited config.json goes nowhere
+# near the dashboard API, so without this every one of these would load verbatim --
+# the same load/write asymmetry the security-relevant knobs also close.
 #
 # Defined HERE and imported by `_EDITABLE_CONFIG` rather than spelled twice, so
 # the write gate and the load clamp cannot drift. Three fields already clamped on
@@ -3821,6 +3870,12 @@ SOFT_STOP_BUDGET_MIN = 0.5
 SOFT_STOP_BUDGET_MAX = 60.0
 EXTRACTION_POOL_SIZE_MIN = 1
 EXTRACTION_POOL_SIZE_MAX = 10
+# Load-only bounds. Unlike the parity block above these are NOT consumed by
+# `_EDITABLE_CONFIG` — the field is config-file-only (no dashboard write path),
+# so the only clamp site is the loader. Kept out of the shared block so its
+# "every bound is shared with the write gate" claim stays true.
+EMPTY_RESPONSE_MAX_CONTINUES_MIN = 1
+EMPTY_RESPONSE_MAX_CONTINUES_MAX = 10
 # knowledge.* budgets. These share a floor of 0, but 0 is MEANINGFUL for several
 # of them (a zero budget disables that sweep), so the floor is deliberately not
 # enforced by clamping a negative up to 0 -- see `_safe_nonnegative_int`, which
@@ -3903,7 +3958,7 @@ _VALID_STT_PROVIDERS = (STT_PROVIDER_LOCAL, "apple", "transcribe")
 #: install the user had to perform themselves (a whisper CLI on ``PATH``, or an
 #: ``mlx``/``faster-whisper`` wheel), which is precisely the cost the resident
 #: local engine removes, so a stored value degrades to ``local`` instead of
-#: leaving voice input pointing at something that is no longer dispatchable.
+#: leaving voice input pointing at something that is not dispatchable.
 _RETIRED_STT_PROVIDERS = ("whisper", "mlx", "parakeet", "faster")
 
 #: Model names accepted for ``stt.model``, derived from the catalog that owns the
@@ -5075,7 +5130,7 @@ def _limit_int(value: object, key: str, *, lo: int, hi: int | None = None) -> in
     - EXCEPT when it truncates to ``0``, either sign: ``0.5`` is not a request to
       disable the limit, but ``int(0.5)`` is exactly the value that means
       "disabled" on the rlimit path and "use the default" on the cgroup path.
-      That silent reinterpretation is the trap in #3474, so it is refused.
+      That silent reinterpretation is the trap, so it is refused.
     - NaN and +/-Infinity are refused before ``int()`` sees them. ``json.loads``
       accepts both literals, and ``int(inf)`` raises ``OverflowError`` --
       uncaught on the rlimit path, which turned a typo into a failure of every
@@ -5137,8 +5192,8 @@ class ResourceLimitsConfig:
 
     THREE mechanisms read this one block, and a key shared between two of them
     does NOT mean the same thing on both. That is the whole reason this section
-    has a schema (#3474): every consumer used to parse the raw dict itself, so
-    the incompatible domains were written down nowhere and drifted apart.
+    has a schema: without it every consumer parses the raw dict itself, leaving
+    the incompatible domains written down nowhere and free to drift apart.
 
     - ``POSIX rlimits`` (``security.apply_resource_limits``, via ``preexec_fn``
       or the exec shim's ``--rlimits=``). Here ``0`` is a MEANINGFUL, documented

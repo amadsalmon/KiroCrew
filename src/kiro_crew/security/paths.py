@@ -53,6 +53,7 @@ from kiro_crew.identity_stores import (
     AUTH_SQLITE_SIDECAR_SUFFIXES,
     fenced_home_dirs,
 )
+from kiro_crew.memory_stores import MEMORY_STORES_DIR_NAME
 
 from .diagnostics import annotate_refusal, refusal_diagnostic
 
@@ -360,6 +361,7 @@ _CREW_SECRET_LEAVES: list[str] = [
     # ``workspace/`` was itself replaceable with one ``ln -s``, and the app opens the
     # path directly (as keystone writers must), so it would have followed the link.
     "trust",
+    "member-memory-bindings",
     "security_events.jsonl",
     # Rotated SEL segments. sel.py closes the live log at a size cap and renames
     # it into this directory, so a segment holds exactly the same audit records
@@ -673,6 +675,33 @@ _CREW_SECRET_LEAVES: list[str] = [
     # ``identity_stores`` and opens it directly, not through this gate.
     AUTH_SQLITE_DB,
     *(f"{AUTH_SQLITE_DB}{suffix}" for suffix in AUTH_SQLITE_SIDECAR_SUFFIXES),
+    # Named memory stores. Each subdirectory is ONE crew's private memory silo --
+    # its markdown tree, its FTS index and its vector-store SQLite file -- and the
+    # whole point of a named store is that a crew reaches only its own. Agent file
+    # tools run as the same UID as every store on disk, so owner-only modes decide
+    # nothing here: without this entry any crew's agent could read another crew's
+    # preferences and lessons straight off disk, or rewrite them, which is the
+    # boundary the split exists to draw. Read AND write, because reading another
+    # crew's memory is the primary harm and writing it is steering that crew's
+    # future turns.
+    #
+    # A DIRECTORY entry, for the reason ``routing`` and ``webhooks`` above are:
+    # markdown files are published through ``atomic_write``'s ``mkstemp`` sibling,
+    # so fencing final names only would leave a writable path to the same bytes
+    # under a random temp name.
+    #
+    # DELIBERATE ASYMMETRY, do not "tidy" it: the DEFAULT store's own ``memory.db``
+    # and ``workspace/memory/`` stay readable, because that is the agent's own
+    # memory and reading it is the product working. Fencing them would be a
+    # default-path behaviour change, which the coexistence constraint forbids. So
+    # ``is_sensitive_path(<home>/memory.db)`` is False and
+    # ``is_sensitive_path(<home>/memory_stores/work/memory.db)`` is True, on
+    # purpose. Full reasoning: docs/system-specs/modules/security.md.
+    #
+    # Every legitimate reader opens a store path DIRECTLY rather than through this
+    # gate -- the established keystone-reader pattern -- so the memory subsystem is
+    # unaffected.
+    MEMORY_STORES_DIR_NAME,
 ]
 _SENSITIVE_HOME_DIRS += [
     f"{prefix}/{leaf}" for prefix in _CREW_HOME_PREFIXES for leaf in _CREW_SECRET_LEAVES
@@ -852,6 +881,30 @@ _WRITE_PROTECTED_HOME_PATHS += [
     # file-edit tool gate is the enforcement point; shell writes sit on the same
     # footing as config.json's.
     f"{prefix}/sessions"
+    for prefix in _CREW_HOME_PREFIXES
+]
+_WRITE_PROTECTED_HOME_PATHS += [
+    # The per-agent bookkeeping sidecar (agent_state.py, ``agent_model_state.json``
+    # directly under the crew home). It is the same input-to-an-authorization-decision
+    # class as rotation.yaml and the OMC index: besides model bookkeeping it records
+    # FORK LINEAGE — ``forked_from`` / ``private_to`` mark a template as ONE crew's
+    # private copy of a shared one (blueprint / copy-on-first-edit semantics). The
+    # fork endpoint reads this lineage to decide whether a template is already the
+    # crew's own copy; a prompt-injected agent that could write it would forge a
+    # ``private_to`` entry naming a SHARED template, so the fork returns
+    # ``already_private`` and the owner's next PATCH lands on the shared file instead
+    # of forking a copy — silently mutating a template other crews depend on. Nothing
+    # downstream neutralizes the forgery: the fork/PATCH path trusts the sidecar as
+    # its own record..
+    #
+    # WRITE-protected, NOT read+write sensitive: it holds no secret and is READ
+    # constantly (``list_agents`` enriches every row with fork info, model resolution
+    # reads ``model_managed`` / ``cc_model``), so classifying it sensitive would break
+    # those reads. Only the agent's own file-edit tool is refused; every internal
+    # writer (agent_state._write via ``atomic_write``) opens the path directly and does
+    # not route through this gate, so the dashboard fork/PATCH and the CLI model-state
+    # updates keep working.
+    f"{prefix}/agent_model_state.json"
     for prefix in _CREW_HOME_PREFIXES
 ]
 _WRITE_PROTECTED_HOME_PATHS += [

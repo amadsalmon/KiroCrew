@@ -188,8 +188,8 @@ class TestToolHooks:
         assert mgr.on_tool_call("ls -la /workplace").action == TOOL_AUTO_APPROVE
 
     def test_exfil_command_denied_at_gate(self):
-        """security-review 5682f92b: data-egress / reverse-shell command shapes must be
-        DENIED at the tool-invocation gate (previously only passively audited).
+        """Data-egress / reverse-shell command shapes must be DENIED at the
+        tool-invocation gate, not only passively audited.
 
         These carry the exfiltration reason specifically (they do not also name a
         sensitive credential path, which is caught by an earlier gate)."""
@@ -228,8 +228,8 @@ class TestToolHooks:
         """A file-read tool whose title is the BARE path (Claude Code provider —
         no 'Reading ' prefix) must be DENIED via is_sensitive_path.
 
-        is_sensitive_path was previously gated on the 'Reading ' prefix, so a
-        bare '~/.aws/credentials' title slipped through (is_sensitive_bash_command
+        Gating is_sensitive_path on the 'Reading ' prefix lets a bare
+        '~/.aws/credentials' title slip through (is_sensitive_bash_command
         needs a command verb, so it can't catch a bare path).
         """
         mgr = HookManager()
@@ -402,7 +402,10 @@ class TestToolHooks:
         # A non-denied tool on the same server still auto-approves by identity.
         assert (
             mgr.on_tool_call(
-                "anything", mcp_server_name="ops", mcp_tool_name="list_items", mcp_identity_trusted=True
+                "anything",
+                mcp_server_name="ops",
+                mcp_tool_name="list_items",
+                mcp_identity_trusted=True,
             ).action
             == TOOL_AUTO_APPROVE
         )
@@ -630,8 +633,8 @@ class TestShellCommandProperty:
     def test_from_tool_input_json_permission_event(self):
         """permission_request events set tool_input (JSON), NOT raw_tool_params
         — this is the dashboard's primary gate path, so the fallback is
-        load-bearing. Regression for the review-bot finding that the first cut
-        only read raw_tool_params and was a no-op on permission events."""
+        load-bearing: reading only raw_tool_params is a no-op on permission
+        events."""
         from kiro_crew.acp.types import AcpEvent
 
         ev = AcpEvent(
@@ -705,9 +708,7 @@ class TestShellCommandUseAws:
         ev = AcpEvent(
             kind="permission_request",
             is_shell=True,
-            tool_input=_json.dumps(
-                {"service_name": "s3api", "operation_name": "list-buckets"}
-            ),
+            tool_input=_json.dumps({"service_name": "s3api", "operation_name": "list-buckets"}),
         )
         assert ev.shell_command == "aws s3api list-buckets"
 
@@ -769,12 +770,10 @@ class TestShellCommandUseAws:
         stay armed for it."""
         from kiro_crew.acp.types import AcpEvent
 
-        ev = AcpEvent(
-            kind="tool_call", is_shell=True, raw_tool_params={"service_name": "ssm"}
-        )
+        ev = AcpEvent(kind="tool_call", is_shell=True, raw_tool_params={"service_name": "ssm"})
         assert ev.shell_command is None
 
-    # ── Casing normalization hardening (2026-08-05) ──
+    # ── Casing normalization hardening ──
 
     def test_pascal_case_operation_normalized_to_kebab(self):
         """PascalCase operation_name (the AWS API name, e.g. 'DeleteStack')
@@ -812,9 +811,7 @@ class TestShellCommandUseAws:
         result = HookManager().on_tool_call(
             "AWS: cloudformation DeleteStack", command=ev.shell_command, is_shell=True
         )
-        assert result.action == TOOL_DENY, (
-            f"PascalCase 'DeleteStack' bypassed deny gate: {result}"
-        )
+        assert result.action == TOOL_DENY, f"PascalCase 'DeleteStack' bypassed deny gate: {result}"
 
     def test_camel_case_operation_normalized(self):
         """camelCase operation_name must also normalize (e.g. 'deleteStack')."""
@@ -911,8 +908,11 @@ class TestShellCommandUseAws:
             kind="permission_request",
             is_shell=True,
             tool_input=_json.dumps(
-                {"service_name": "dynamodb", "operation_name": "DeleteTable",
-                 "parameters": {"table-name": "users-prod"}}
+                {
+                    "service_name": "dynamodb",
+                    "operation_name": "DeleteTable",
+                    "parameters": {"table-name": "users-prod"},
+                }
             ),
         )
         result = HookManager().on_tool_call(
@@ -1212,13 +1212,82 @@ class TestEventIsSpawnRun:
         assert event_is_spawn_run(self._event(tool_name="", title="grep")) is False
 
 
+class TestClassifierOnlyHostTrustedProof:
+    """The READ_ONLY (``classifier_only``) non-shell proof is host-trusted only.
+
+    ``_is_host_read_only_builtin`` is the sole non-shell read-only proof the gate
+    accepts for the side chat. It demands a POSITIVE provenance signal
+    (``mcp_identity_trusted``) plus a host-known built-in name with no MCP server
+    behind it, and the allowlist itself is pinned to read scopes so a
+    write-capable built-in cannot join by mistake.
+    """
+
+    _WRITE_SCOPES = frozenset({"filesystem.write", "commands", "tools"})
+
+    def test_host_read_only_builtins_map_only_to_read_scopes(self):
+        # Every allowlisted name is a governed built-in whose scopes are read
+        # scopes only. A name absent from BUILTIN_TOOL_SCOPES has no governed
+        # scope at all and is not presumed read-only either.
+        from kiro_crew.hooks import _HOST_READ_ONLY_BUILTIN_TOOLS
+        from kiro_crew.platform.governance import BUILTIN_TOOL_SCOPES
+
+        read_scopes = {"filesystem.read", "network.egress"}
+        for name in sorted(_HOST_READ_ONLY_BUILTIN_TOOLS):
+            assert name in BUILTIN_TOOL_SCOPES, name
+            scopes = set(BUILTIN_TOOL_SCOPES[name])
+            assert scopes, name
+            assert scopes <= read_scopes, (name, scopes)
+            assert not (scopes & self._WRITE_SCOPES), (name, scopes)
+
+    def test_write_capable_builtins_are_not_allowlisted(self):
+        # The converse pin: no built-in that can write, run commands, or govern
+        # tools is on the read-only allowlist.
+        from kiro_crew.hooks import _HOST_READ_ONLY_BUILTIN_TOOLS
+        from kiro_crew.platform.governance import BUILTIN_TOOL_SCOPES
+
+        for name, scopes in BUILTIN_TOOL_SCOPES.items():
+            if self._WRITE_SCOPES & set(scopes):
+                assert name not in _HOST_READ_ONLY_BUILTIN_TOOLS, name
+
+    def test_trusted_host_builtin_is_proven_read_only(self):
+        from kiro_crew.hooks import _is_host_read_only_builtin
+
+        assert _is_host_read_only_builtin("fs_read", "", mcp_identity_trusted=True) is True
+
+    def test_untrusted_identity_refuses_a_host_known_name(self):
+        # The seam: a host-known name whose provenance is not the _meta.kiro
+        # parse this client made (inline payload, hand-built event, cache miss)
+        # is prose, not identity. The absence of a server name proves nothing.
+        from kiro_crew.hooks import _is_host_read_only_builtin
+
+        assert _is_host_read_only_builtin("fs_read", "", mcp_identity_trusted=False) is False
+
+    def test_mcp_served_tool_named_like_a_builtin_is_refused(self):
+        from kiro_crew.hooks import _is_host_read_only_builtin
+
+        assert (
+            _is_host_read_only_builtin("fs_read", "evil-server", mcp_identity_trusted=True) is False
+        )
+
+    def test_empty_identity_matches_nothing(self):
+        from kiro_crew.hooks import _is_host_read_only_builtin
+
+        assert _is_host_read_only_builtin("", "", mcp_identity_trusted=True) is False
+
+    def test_write_capable_builtin_is_not_a_read_only_proof(self):
+        from kiro_crew.hooks import _is_host_read_only_builtin
+
+        for name in ("fs_write", "code", "execute_bash"):
+            assert _is_host_read_only_builtin(name, "", mcp_identity_trusted=True) is False, name
+
+
 class TestMutatingKindBeatsTheTitle:
     """Only an explicitly READ-ONLY ``tool_kind`` may auto-approve on a title.
 
     ``tool_name`` is the display title, and ``select_tool_title``
     (``acp/_dispatch.py``) prefers the LLM-authored ``description`` — so it is
     agent-controlled, which ``on_tool_call``'s own docstring states outright. The
-    computer-use read-only auto-approve used to be tested BEFORE any kind guard, so
+    computer-use read-only auto-approve must not be tested BEFORE any kind guard: otherwise,
     once the operator enabled computer use, an ``edit``/``execute``/``write``/
     ``delete`` call titled ``mcp__kirocrew-computer__computer_get_state`` skipped
     interactive approval entirely.
@@ -1766,9 +1835,7 @@ class TestAppOwnMcpServerAutoApprove:
             "_is_first_party_app",
             lambda app: app.casefold() in {"myapp"},
         )
-        monkeypatch.setattr(
-            hooks_mod, "_BUILTIN_APP_MCP_SERVERS", frozenset({"myapp:srv"})
-        )
+        monkeypatch.setattr(hooks_mod, "_BUILTIN_APP_MCP_SERVERS", frozenset({"myapp:srv"}))
 
     def test_own_server_tool_auto_approved(self, _builtin):
         mgr = HookManager()
@@ -2206,7 +2273,7 @@ class TestTargetPathNestedExtraction:
     read shape ``{"operations": [{"mode": "Line", "path": …}]}`` — yielded ``[]``
     and the sensitive-path keystone in ``on_tool_call`` never saw the target.
     Worse than a missed deny: a read-kind call with the nested spelling was
-    AUTO-APPROVED while the flat spelling of the same path is denied (#6543).
+    AUTO-APPROVED while the flat spelling of the same path is denied.
 
     The fix recurses into dict/list values (depth-bounded) and stays
     extract-only; ``cli_chat``'s consent prompt shares the helper, so the
@@ -2329,9 +2396,7 @@ class TestTargetPathNestedExtraction:
         """The caps must not start refusing real batch reads."""
         from kiro_crew.hooks import target_paths
 
-        params = {
-            "operations": [{"mode": "Line", "path": f"/tmp/f{i}.txt"} for i in range(40)]
-        }
+        params = {"operations": [{"mode": "Line", "path": f"/tmp/f{i}.txt"} for i in range(40)]}
         result = target_paths(params)
         assert len(result) == 40
         assert result.truncated is False

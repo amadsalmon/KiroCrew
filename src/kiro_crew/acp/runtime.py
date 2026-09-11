@@ -101,7 +101,11 @@ from kiro_crew.acp.types import (
     JsonRpcRequest,
     backends_retired_by_host_logout,
 )
-from kiro_crew.agent import ensure_agent_materialized
+from kiro_crew.agent import (
+    ForkGovernanceUnresolved,
+    ensure_agent_materialized,
+    require_fork_governance,
+)
 from kiro_crew.browser_cli.launch import browser_session_env, browser_socket_env
 from kiro_crew.config.paths import kiro_agents_dir
 from kiro_crew.constants import KIROCREW_SPAWNED_ENV, KIROCREW_SPAWNED_VALUE
@@ -122,6 +126,7 @@ from kiro_crew.sandbox import (
     bind_voice_safe_agent_workspace_async,
     cgroup_scope_argv,
     create_subprocess_limited,
+    delegated_workspace_exposes_agents_dir,
     release_bound_agent_workspace,
     resolve_bound_session_workspace,
     scrub_agent_subprocess_env,
@@ -714,6 +719,7 @@ class AcpRuntime:
         expect_mcp_reports: bool = True,
         acp_backend: str = ACP_BACKEND_KIRO,
         crew_agent: str = "",
+        private_memory: bool = False,
     ):
         if work_dir:
             self._work_dir = Path(work_dir)
@@ -749,9 +755,21 @@ class AcpRuntime:
                 )
         self._model = model
         self._sandbox_mode = sandbox_mode
+        self._private_memory = private_memory is True
+        if self._private_memory:
+            from kiro_crew.member_memory_auth import require_private_memory_mcp_backend
+
+            require_private_memory_mcp_backend(acp_backend)
         self._extra_env = extra_env or {}
-        self._mcp_gateway_overlay = str(mcp_gateway_overlay) if mcp_gateway_overlay else None
-        self._mcp_gateway_socket = str(mcp_gateway_socket) if mcp_gateway_socket else None
+        # Keep private MCP subprocesses inside this runtime's sandbox, including
+        # after resume. An older shared broker cannot attest their member origin.
+        self._private_mcp_gateway_socket = str(mcp_gateway_socket) if mcp_gateway_socket else ""
+        self._mcp_gateway_overlay = (
+            str(mcp_gateway_overlay) if mcp_gateway_overlay and not self._private_memory else None
+        )
+        self._mcp_gateway_socket = (
+            str(mcp_gateway_socket) if mcp_gateway_socket and not self._private_memory else None
+        )
         # Whether sessions on this runtime should hold drain_init() open for
         # slow MCP servers (the no-report ceiling). A runtime whose agent is
         # KNOWN to have zero MCP servers — the kirocrew-lite background runtime,
@@ -1179,6 +1197,26 @@ class AcpRuntime:
         except Exception:
             logger.warning("pre-spawn agent materialization failed", exc_info=True)
 
+        # NOT best-effort: a fork-backed agent may not spawn until fork
+        # governance is re-projected, and a failed or timed-out refresh ABORTS
+        # the spawn — its on-disk allowedTools/autoApprove bypass the
+        # PreToolUse gate, so proceeding would run ungoverned grants. The work
+        # dir is the cwd kiro-cli resolves --agent against first, so the gate
+        # also refuses a fork shadowed by a project-local spec. Same gate as
+        # the legacy client spawn path (THIS is the live path).
+        try:
+            await asyncio.to_thread(require_fork_governance, self._agent, self._work_dir)
+        except ForkGovernanceUnresolved as exc:
+            raise AcpRuntimeError(str(exc)) from exc
+        # The agents-tree seal is a launcher rule, and a spawn delegated to
+        # kiro-cli's internal sandbox never sees the launcher — so on those
+        # paths a workspace overlapping the agents directory is the one way left
+        # to rewrite a spec. Refused before the spawn; off-loop because the
+        # delegation predicate reads the kiro settings file.
+        overlap = await asyncio.to_thread(delegated_workspace_exposes_agents_dir, self._work_dir)
+        if overlap:
+            raise AcpRuntimeError(overlap)
+
         argv: list[str] = [kiro_bin, KIRO_CLI_SUBCMD, "--agent", self._agent]
         if self._model:
             # Pin the model at process start (mirrors `kiro-cli chat --model X`).
@@ -1273,12 +1311,26 @@ class AcpRuntime:
         argv, delegate_internal_sandbox = await asyncio.to_thread(
             apply_pod_bundle_spawn, argv, backend=self._acp_backend
         )
+        private_kwargs: dict[str, Any] = (
+            {
+                "private_memory": True,
+                "private_mcp_gateway_socket": self._private_mcp_gateway_socket,
+                "private_mcp_gateway_socket_overrides": tuple(
+                    self._extra_env[name]
+                    for name in ("KIROCREW_MCP_SOCKET", "MC_MCP_SOCKET")
+                    if self._extra_env.get(name)
+                ),
+            }
+            if self._private_memory
+            else {}
+        )
         argv, self._sandbox_cleanup = await wrap_argv_async(
             argv,
             mode=self._sandbox_mode,
             strip_python_env=True,
             is_kiro_cli=delegate_internal_sandbox,
             _prepare=wrap_argv,
+            **private_kwargs,
         )
         # cgroup v2 scope (OUTERMOST): bound this agent + all its MCP-server /
         # tool descendants with pids.max (fork bomb) + memory.max (RSS balloon).
@@ -3029,6 +3081,15 @@ class AcpRuntime:
         if self._acp_backend == ACP_BACKEND_KAS and agent:
 
             def _build() -> list[dict[str, Any]]:
+                # NOT best-effort, same gate as the --agent spawn path: the
+                # projection READS the on-disk spec and transmits its grants
+                # into the KAS session, so a fork whose governance refresh is
+                # pending or failed would project stale allowedTools /
+                # autoApprove over the wire. Raises ForkGovernanceUnresolved,
+                # mapped below alongside the translation failure — both mean
+                # "do not create this session". getattr like the shutdown
+                # path above: projection-only callers construct bare runtimes.
+                require_fork_governance(agent, getattr(self, "_work_dir", None))
                 try:
                     ensure_agent_materialized(agent)
                 except Exception:
@@ -3068,6 +3129,10 @@ class AcpRuntime:
 
             try:
                 return await asyncio.to_thread(_build)
+            except ForkGovernanceUnresolved as exc:
+                # Fail loud for the same reason as the translation error below:
+                # continuing would hand the session ungoverned grants.
+                raise AcpRuntimeError(str(exc)) from exc
             except KasAgentTranslationError as exc:
                 # Fail loud: continuing would create a session on KAS's own default
                 # mode, which for a restricted agent means running a BROADER agent

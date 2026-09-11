@@ -57,7 +57,21 @@ export const CHUNK_BUDGETS = {
   // takeover, 13 catalogs x 52 lines, ~55 KB). Same recurrence as the `t` and
   // `App` entries below: a ceiling that drifted to <1% headroom fails on
   // routine string growth rather than on the new library it exists to catch.
-  all: 10975 * KB, // measured 10450 KB on main 2026-09-06 (~5% headroom)
+  // Re-measured 2026-09-10: main @ b165ba1be alone builds the chunk at
+  // 11,302,007 B (11037 KB) against the 10975 KB ceiling -- 62 KB OVER, so
+  // main's own gate is red and every PR rebased onto it inherits the failure.
+  // Attribution is measured, not assumed: the two feature PRs merged back to
+  // back at 17:53-17:54 (#9810 browser element annotations, +423 catalog lines
+  // across 13 languages; #9812 file-viewer type-first annotator, +107 lines)
+  // ship only translated product copy into this chunk -- it still holds the
+  // same 14 modules (13 catalogs plus the entry), no library reached it, and
+  // no lazy import() boundary can move a catalog string out of `all`. Same
+  // recurrence, same remedy: back to the 5% convention.
+  // Memory V2 adds the private-memory panels' strings (member memory, records
+  // editor, store picker/card, carve, backups, retired) across all 13 catalogs
+  // on top of that: with them the chunk builds at 11,332,186 B (11067 KB), so
+  // the 5% headroom is taken over that measurement rather than main's.
+  all: 11620 * KB, // measured 11067 KB on feat/memory-v2-ui 2026-09-10 (~5% headroom)
 
   // The i18n RUNTIME — the i18next singleton, `initI18n`, the English catalog —
   // named after `src/i18n/t.ts`. Held separately from `all` above because

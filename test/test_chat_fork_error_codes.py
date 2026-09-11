@@ -165,10 +165,10 @@ async def test_an_over_long_prompt(tmp_path, monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_a_non_integer_index_and_an_out_of_range_one_differ(tmp_path, monkeypatch) -> None:
-    """The distinction a caller could not previously make without matching English.
+    """A caller distinguishes the two bugs by ``code``, not by matching English.
 
     "not an index" and "an index past the end" are different client bugs and want
-    different handling; before the code they were both ``400`` with prose.
+    different handling; without the ``code`` they are both ``400`` with prose.
     """
     monkeypatch.setattr("kiro_crew.dashboard.state.config_dir", lambda: tmp_path)
     _, bad_type = await _fork(_seeded_state(tmp_path), "forkable", {"at_message_index": "2"})
@@ -295,7 +295,7 @@ async def test_the_three_404s_stay_indistinguishable(tmp_path, monkeypatch) -> N
 
     ``404`` (not ``403``) is deliberate: it makes a slot owned by another app, an
     unscoped slot, and a slot that does not exist look identical to a caller
-    behind the App Kit isolation boundary, so the boundary cannot be used to
+    behind the App Kit isolation boundary, so the boundary cannot be abused to
     enumerate slots (CWE-204). The added ``code`` is a NEW field on that same
     response, so it is a new place for the three to diverge — this pins that
     they do not. The true reason stays recorded server-side via SEL.
@@ -361,7 +361,7 @@ def test_an_unreadable_mid_rotation_corpus_refuses_instead_of_approximating() ->
     throws only on the second call, which the seeded fixture cannot express; the
     property that matters is structural, so it is asserted structurally.
 
-    Why it matters: the fallback that used to sit here prepended only THIS key's
+    Why it matters: a fallback prepending only THIS key's
     rotated head, so a rotation on a LATER chain member left earlier members'
     rotated rows missing and shifted every index. An index-addressed fork then
     copied different messages than the reader pointed at, with nothing on screen
