@@ -50,6 +50,7 @@ interface MobileTopBarProps {
   enterSplit: (anchor: string | null) => void
   /** The session menu's "New chat here" item (ChatPage builds it from the current folder). */
   mobileNewSessionItem: ComponentProps<typeof ChatHeaderMenu>['newSessionHere']
+  onPromote: ComponentProps<typeof ChatHeaderMenu>['onPromote']
   dispatch: AppDispatch
 }
 
@@ -86,6 +87,7 @@ export default function MobileTopBar({
   activeIsSplitAnchor,
   enterSplit,
   mobileNewSessionItem,
+  onPromote,
   dispatch,
 }: MobileTopBarProps) {
   return (
@@ -145,6 +147,8 @@ export default function MobileTopBar({
                 }}
                 mode={effectiveMode}
                 sidebarOnScreen={sidebarOnScreen}
+                memoryMode={currentSlot?.memory_mode}
+                onPromote={onPromote}
                 // Pop out / focus the popped-out window live in the bar's
                 // trailing ⋯ menu (below), the phone's window menu; the same
                 // row in two adjacent menus read as two different actions.

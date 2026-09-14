@@ -8,8 +8,9 @@ import { agentOrDefaultLabel } from '../utils/agentLabel'
 import { toApiDecision } from '../utils/approvalDecision'
 import { isHiddenInvisibleAssistantRow } from '../utils/invisibleText'
 import { useAppSelector, store, type AppDispatch } from '../store'
+import { useConfirm } from '../components/ConfirmDialog'
 import {
-  switchSlot, createSlot, forkSlot, setPendingInput, openActivityPanel, openActivityToTab, selectSubagent, clearFollowupCard, dismissFollowupItem, requestSlotReveal, mcpAppKey,
+  switchSlot, createSlot, forkSlot, promoteSlot, setPendingInput, openActivityPanel, openActivityToTab, selectSubagent, clearFollowupCard, dismissFollowupItem, requestSlotReveal, mcpAppKey,
 } from '../store/chatSlice'
 import { slotIsRemoteBound } from '../store/dashboardSlice'
 import { api } from '../api/client'
@@ -886,6 +887,41 @@ export default function ChatPage({ mode, embedded, embedMode, popout, noUrlSync 
     refreshSessionControlStatuses, activeFolderName, sessionControlKey, sessionControlStatuses, chatFolders,
     chatFoldersError, chatFoldersLoaded, mobileNewSessionInFlightRef, mobileNewSessionBusy, setMobileNewSessionBusy,
   } = sessionControlState
+
+  // "Keep this chat" (issue #9694): promotes an ephemeral (incognito/temporary)
+  // slot to persistent. Human-initiated only — there is no MCP tool or agent
+  // path that can reach this, by design (see chat_fork.api_chat_slot_promote).
+  // Uses the shared async confirm dialog (never window.confirm, which would
+  // freeze the tab) so the user sees exactly what becomes retained before the
+  // whole transcript is copied into a brand-new persistent slot; the
+  // ephemeral original is left open and untouched either way.
+  const { confirm: confirmPromote, confirmDialog: promoteConfirmDialog } = useConfirm()
+  const handlePromote = useCallback(async () => {
+    if (!activeSlot) return
+    const isTemporary = currentSlot?.memory_mode === 'temporary'
+    const confirmed = await confirmPromote({
+      title: i18nT('pages.chatPage.keep_this_chat_confirm_title'),
+      body: i18nT(
+        isTemporary
+          ? 'pages.chatPage.keep_this_chat_confirm_body_temporary'
+          : 'pages.chatPage.keep_this_chat_confirm_body',
+      ),
+      confirmLabel: i18nT('pages.chatPage.keep_this_chat'),
+      danger: false,
+    })
+    if (!confirmed) return
+    try {
+      const result = await dispatch(promoteSlot({ slot: activeSlot })).unwrap()
+      if (result.ok) {
+        await dispatch(switchSlot({ key: result.key, announceOnMissing: true }))
+      } else {
+        showActionError(i18nT('pages.chatPage.keep_this_chat_failed_error', { error: result.error || i18nT('pages.chatPage.unknown_error') }))
+      }
+    } catch (e) {
+      showActionError(i18nT('pages.chatPage.keep_this_chat_failed_error', { error: errMessage(e) || i18nT('pages.chatPage.unknown_error') }))
+    }
+  }, [activeSlot, confirmPromote, currentSlot?.memory_mode, dispatch, showActionError])
+
   // One source for both same-meaning markers in the agent pop-up: the row's check and
   // the default-agent row's label. Reading the slot twice let them disagree.
   const activeAgentName = currentSlot?.agent || defaultAgent || 'default'
@@ -1547,6 +1583,7 @@ export default function ChatPage({ mode, embedded, embedMode, popout, noUrlSync 
         activeIsSplitAnchor={activeIsSplitAnchor}
         enterSplit={enterSplit}
         mobileNewSessionItem={mobileNewSessionItem}
+        onPromote={handlePromote}
         dispatch={dispatch}
       />
 
@@ -1780,6 +1817,8 @@ export default function ChatPage({ mode, embedded, embedMode, popout, noUrlSync 
                   mode={effectiveMode}
                   sidebarOnScreen={sidebarOnScreen}
                   newSessionHere={embedMode !== 'chat' && isMobile ? mobileNewSessionItem : undefined}
+                  memoryMode={currentSlot?.memory_mode}
+                  onPromote={handlePromote}
                 />
                 </div>
                 {/* Shared with every split-view pane header (#9727). The editor
@@ -1893,6 +1932,7 @@ export default function ChatPage({ mode, embedded, embedMode, popout, noUrlSync 
               )}
             </div>
             <ChatDropOverlay active={dragOver} />
+            {promoteConfirmDialog}
             {isWelcomeState ? (
               <motion.div
                 key="welcome-hero"

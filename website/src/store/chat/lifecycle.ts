@@ -221,6 +221,22 @@ export const forkSlot = createAsyncThunk(
   },
 )
 
+// "Keep this chat": promotes an ephemeral (incognito/temporary) slot to
+// persistent by forking its WHOLE transcript into a new persistent slot, and
+// leaves the ephemeral original open and unchanged. The server always makes
+// the new slot persistent, which is addSlotOptimistic's default, so no
+// memory_mode is passed.
+export const promoteSlot = createAsyncThunk(
+  'chat/promoteSlot',
+  async ({ slot }: { slot: string }, { dispatch }) => {
+    const d = await api.promoteChatSlot(slot)
+    if (d.ok) {
+      dispatch(addSlotOptimistic({ key: d.key, title: d.title || d.key, messages: d.messages || 0, running: false, folder_id: d.folder_id, ...(d.pinned ? { pinned: true } : {}) }))
+    }
+    return d
+  },
+)
+
 /** Delete a history row. A refusal REJECTS WITH A VALUE rather than throwing:
  *  `api.deleteSession` throws an `ApiError` on any non-2xx, and the thunk
  *  boundary's `miniSerializeError` keeps string fields only, so a rethrow

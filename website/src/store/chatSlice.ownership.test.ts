@@ -180,7 +180,7 @@ const REEXPORTS: Array<[string, Record<string, unknown>, string[]]> = [
   ['slotRefresh', slotRefresh, ['refreshSlot', 'warmSlotCache']],
   ['runState', runState, ['wireTurnIdentity']],
   ['windowWalk', windowWalk, ['WINDOW_WALK_MAX_PAGES']],
-  ['lifecycle', lifecycle, ['createSlot', 'deleteHistorySession', 'fetchHistory', 'forkSlot', 'resumeFromHistory']],
+  ['lifecycle', lifecycle, ['createSlot', 'deleteHistorySession', 'fetchHistory', 'forkSlot', 'promoteSlot', 'resumeFromHistory']],
 ]
 
 /** Names the facade itself defines rather than re-exports. */
