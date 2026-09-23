@@ -872,10 +872,22 @@ export default function ArtifactDetailPage({ popout = false }: { popout?: boolea
       // save shortcut must not fire — a mid-dialog Cmd+S would persist the very
       // draft the user is about to confirm discarding.
       if (confirmOpen) return
-      if ((e.metaKey || e.ctrlKey) && e.key === 's' && dirty) {
+      // Own the save chord whenever editing, not only when dirty, so it never
+      // falls through to AppKit's default (selecting the word under the cursor).
+      // Match case-insensitively: with Shift held e.key is 'S', so an exact
+      // 's' match makes the Cmd+Shift+S snapshot branch unreachable. Read the
+      // Shift state from e.shiftKey (Cmd+Shift+S → snapshot, Cmd+S → silent
+      // save) and only issue the write when dirty so a clean buffer does not
+      // trigger a redundant save.
+      //
+      // Do NOT gate on !e.defaultPrevented here. This editor mounts no onSave
+      // into Pierre, yet Pierre's capture handler still preventDefaults the
+      // chord and then no-ops (onSaveRef is undefined) — so an already-prevented
+      // event carries no save. Standing down on it would drop both the save and
+      // the snapshot. This document handler is the only one that actually saves.
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
         e.preventDefault()
-        // Cmd+Shift+S → snapshot (creates a new version), Cmd+S → silent save.
-        handleSaveRef.current(e.shiftKey)
+        if (dirty) handleSaveRef.current(e.shiftKey)
       }
       if (e.key === 'Escape') cancelEditing()
     }
