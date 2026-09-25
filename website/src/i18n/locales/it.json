@@ -10833,7 +10833,10 @@
         "turn_one": "{{count}} turno",
         "turn_other": "{{count}} turni",
         "stop_failed": "Impossibile interrompere il turno laterale — riprova",
-        "refresh_blocked_busy": "Ferma prima la risposta in corso — aggiornare la eliminerebbe"
+        "refresh_blocked_busy": "Ferma prima la risposta in corso — aggiornare la eliminerebbe",
+        "send_to_main": "Aggiungi alla chat principale",
+        "send_to_main_tip": "Lo mette nella casella della chat principale, così puoi inviarlo da lì",
+        "send_to_main_done": "Aggiunto alla chat principale"
       },
       "sidePanel": {
         "close_panel": "Chiudi il pannello",

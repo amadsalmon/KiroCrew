@@ -10539,7 +10539,10 @@
         "thinking": "考え中…",
         "turn_other": "{{count}} ターン",
         "stop_failed": "サイドターンを停止できませんでした — もう一度お試しください",
-        "refresh_blocked_busy": "まず実行中の応答を停止してください — 更新すると破棄されます"
+        "refresh_blocked_busy": "まず実行中の応答を停止してください — 更新すると破棄されます",
+        "send_to_main": "メインチャットに追加",
+        "send_to_main_tip": "メインチャットの入力欄に入れて、そこから送信できます",
+        "send_to_main_done": "メインチャットに追加済み"
       },
       "sidePanel": {
         "close_panel": "パネルを閉じる",

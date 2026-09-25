@@ -10833,7 +10833,10 @@
         "turn_one": "{{count}} tour",
         "turn_other": "{{count}} tours",
         "stop_failed": "Impossible d’arrêter le tour latéral — réessaie",
-        "refresh_blocked_busy": "Arrête d'abord la réponse en cours — actualiser la supprimerait"
+        "refresh_blocked_busy": "Arrête d'abord la réponse en cours — actualiser la supprimerait",
+        "send_to_main": "Ajouter au chat principal",
+        "send_to_main_tip": "Le place dans le champ du chat principal pour que tu puisses l’envoyer là-bas",
+        "send_to_main_done": "Ajouté au chat principal"
       },
       "sidePanel": {
         "close_panel": "Fermer le panneau",

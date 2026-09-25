@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { MessageCircleQuestionMark, RotateCcw } from 'lucide-react'
+import { Check, MessageCircleQuestionMark, RotateCcw, CornerUpRight } from 'lucide-react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { api } from '../../api/client'
 import { useAppSelector, useAppDispatch } from '../../store'
-import { sideClose, sideOptimisticAppend, sideOptimisticRollback, sseSideQueue, sideReleaseConsumed, queueEditBroadcastAt } from '../../store/chatSlice'
+import { sideClose, sideOptimisticAppend, sideOptimisticRollback, sseSideQueue, sideReleaseConsumed, queueEditBroadcastAt, stageToMainComposer } from '../../store/chatSlice'
 import QueueStack from '../../components/QueueStack'
 import ChatMessageList from '../../app-sdk/ChatMessageList'
 import FollowUpBar from '../../components/FollowUpBar'
@@ -19,6 +19,7 @@ import { buildOutgoingTurn, isEmptyTurn } from '../../chat-core/composer/outgoin
 import { mergeIntoDraft as appendToDraft } from '../../utils/chatDrafts'
 import type { SideMessage, SideQueueEntry } from '../../store/chatSlice'
 import type { ChatMessage } from '../../types'
+import { searchableText } from '../../utils/searchableText'
 
 import { i18nT } from '../../i18n/t'
 import { fmtNumber } from '../../i18n/format'
@@ -29,6 +30,7 @@ const MAX_INPUT_H = 240
 // not a state, so leaving it until the next submit would let it sit beside a later
 // turn it has nothing to do with.
 const NOTICE_TTL_MS = 8_000
+const SEND_TO_MAIN_ACK_MS = 2_000
 // Stable fallbacks for a slot with no side buffer yet. An inline `?? []` allocates
 // a fresh array every render, so the transcript map, the queue cards and the
 // blocked-id set would all recompute on every render of an EMPTY panel — the one
@@ -139,6 +141,40 @@ export default function SideChat({ slot }: { slot: string }) {
     }),
     [messages, lastIdx, isStreamingLast]
   )
+
+  // Stage exactly what the transcript renders: hidden widget bodies and protocol
+  // markers stay out of the composer, trailing whitespace is removed, and leading
+  // indentation remains intact for whitespace-sensitive Markdown.
+  const renderedLastAnswer = transcript[lastIdx]?.role === 'assistant'
+    ? searchableText(transcript[lastIdx])
+    : ''
+  const settledAnswer = renderedLastAnswer.trim() ? renderedLastAnswer : ''
+  const settledAnswerKey = settledAnswer
+    ? [slot, lastMsg?.run_id ?? '', lastMsg?.ts ?? '', lastIdx].join(' ')
+    : null
+  const [addedAnswerKey, setAddedAnswerKey] = useState<string | null>(null)
+  const sendToMainTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const sendToMainDone = settledAnswerKey !== null && addedAnswerKey === settledAnswerKey
+
+  useEffect(() => () => {
+    if (sendToMainTimer.current !== null) clearTimeout(sendToMainTimer.current)
+  }, [])
+
+  // Stage the settled answer for the composer of THIS slot (append, never
+  // send). Keyed by `slot` because a Side Chat lives on more than one host —
+  // the dashboard ChatPage and a Crew Member's ChatPane — and only the host
+  // showing this slot must pick it up. The consuming host merges it against
+  // that slot's live draft; the user commits it there.
+  const sendToMain = useCallback(() => {
+    if (!settledAnswer || !settledAnswerKey || addedAnswerKey === settledAnswerKey) return
+    dispatch(stageToMainComposer({ slot, text: settledAnswer }))
+    if (sendToMainTimer.current !== null) clearTimeout(sendToMainTimer.current)
+    setAddedAnswerKey(settledAnswerKey)
+    sendToMainTimer.current = setTimeout(() => {
+      setAddedAnswerKey(current => current === settledAnswerKey ? null : current)
+      sendToMainTimer.current = null
+    }, SEND_TO_MAIN_ACK_MS)
+  }, [settledAnswer, settledAnswerKey, addedAnswerKey, slot, dispatch])
 
   /** Derived from the same helper the main chat uses, so "options only after the answer
    *  settles" and "a later user message clears them" behave identically. */
@@ -731,6 +767,27 @@ export default function SideChat({ slot }: { slot: string }) {
             onCancel={qid => { if (!blockedQueueIds.has(qid)) cancelQueued.mutate({ queueId: qid, slot }) }}
             onEdit={(qid, content) => { if (!blockedQueueIds.has(qid)) editQueued.mutate({ queueId: qid, content, slot }) }}
           />
+        </div>
+      )}
+      {settledAnswer && (
+        <div className="shrink-0 px-2 pb-1">
+          {/* The read-only side chat can only PROPOSE; this hands the settled
+              answer to the main chat, where it can be acted on. */}
+          <button
+            type="button"
+            onClick={sendToMain}
+            aria-disabled={sendToMainDone}
+            title={i18nT('pages.chat.sideChat.send_to_main_tip')}
+            data-testid="side-chat-send-to-main"
+            className="flex items-center gap-1.5 text-[12px] font-medium text-accent hover:text-accent-hover bg-transparent border-none cursor-pointer px-1 py-0.5"
+          >
+            {sendToMainDone
+              ? <Check size={13} aria-hidden />
+              : <CornerUpRight size={13} aria-hidden />}
+            {sendToMainDone
+              ? i18nT('pages.chat.sideChat.send_to_main_done')
+              : i18nT('pages.chat.sideChat.send_to_main')}
+          </button>
         </div>
       )}
       {followUpOptions.length > 0 && (

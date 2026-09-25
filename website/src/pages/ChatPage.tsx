@@ -25,7 +25,7 @@ import { queuedSendStash } from '../hooks/useQueuedMessageActions'
 import { useChatPopouts } from '../hooks/useChatPopouts'
 import {
   switchSlot, createSlot, deleteSlot, loadOlderMessages, abortActiveOlderFetch, isSupersededPagingRejection, appendMessage, appendSlotMessage, endLocalTurn, forkSlot,
-  setSlotRunning, startLocalTurn, syncSlotRunningFromServer, setPendingInput, setAgentSwitchNotice, resolveByApprovalId, selectComposerBusy, selectSendConfirmed,
+  setSlotRunning, startLocalTurn, syncSlotRunningFromServer, setPendingInput, stageToMainComposer, setAgentSwitchNotice, resolveByApprovalId, selectComposerBusy, selectSendConfirmed,
   setVoiceAudio,
   toggleActivity, openActivityPanel, openActivityToTab,
   selectSubagent,
@@ -288,7 +288,7 @@ import { REASONING_ROLES, stripAppEnvelope } from './chat/groupDisplayItems'
 import { PREVIEW_EXPAND_EVENT } from '../components/WebPreviewPanel'
 import ChatSidebar from './ChatSidebar'
 import { SIDEBAR_MAX, clampSidebarWidth, parseStoredSidebarWidth } from './chat/sidebarWidth'
-import { mergeIntoDraft, mergeRecoveredDraft, setDraft } from '../utils/chatDrafts'
+import { mergeIntoDraft, mergeRecoveredDraft, setDraft, chatPageShouldConsumeHandoff } from '../utils/chatDrafts'
 import { setFileDraft } from '../utils/chatFileDrafts'
 import { setPasteDraft } from '../utils/chatPasteDrafts'
 import { setSessionRefDraft } from '../utils/chatSessionRefDrafts'
@@ -854,6 +854,7 @@ export default function ChatPage({ mode, embedded, embedMode, popout, noUrlSync 
     messages, slotRunning, slotLoading, sendingRef, knowledgeFetch, pendingQuestion, history,
   })
   const pendingInput = useAppSelector(s => s.chat.pendingInput)
+  const mainComposerAppend = useAppSelector(s => s.chat.mainComposerAppend)
 
   const [chatConfig, setChatConfig] = useState<ChatConfig>(loadChatConfig)
   useEffect(() => {
@@ -1267,6 +1268,46 @@ export default function ChatPage({ mode, embedded, embedMode, popout, noUrlSync 
     setInput,
     raisePrefillHint,
   })
+
+  // Consume Side Chat → main composer hand-offs staged for THIS slot. APPEND
+  // against the live input, never replace: the merge runs here because
+  // `inputRef` is the only holder of unsent text, mirroring the follow-up
+  // card's "add to this session". The `slot` guard means a hand-off staged in
+  // a Crew Member's Side Chat (consumed by that member's ChatPane) is left
+  // untouched here rather than landing in the dashboard composer. Pre-fills and
+  // stops — the user sends when they choose, so it never touches a live turn.
+  //
+  // In split view this composer is unmounted (SessionGridView renders a
+  // ChatInput per cell) and the grid ChatPane whose `slotKey === activeSlot`
+  // is the real consumer. Since the anchor pane's slot IS `activeSlot`, the
+  // slot guard alone would let both this effect and that pane consume the same
+  // hand-off in one flush — the pane shows it while this effect also persists
+  // it into the hidden single-session draft, resurfacing as a duplicate when
+  // split view collapses. Skip entirely while split view is active so the grid
+  // pane is the sole consumer.
+  //
+  // Mid-switch: this effect is declared before the slot-change restore and the
+  // `composerSlotRef` advance, so when a hand-off lands in the same commit as a
+  // switch INTO its slot, `activeSlot` already names the incoming slot while
+  // `inputRef` still holds the OUTGOING slot's unsent text. Appending to that
+  // would write the outgoing text under the incoming slot, which the restore
+  // then shows and `flushDrafts()` persists — the incoming slot's own draft is
+  // gone. Append to the incoming slot's stored draft instead; the restore that
+  // runs next in this commit puts it on screen, and the outgoing slot's flush
+  // (which reads `inputRef`) still sees only its own text. The hand-off is
+  // consumed here either way: an early return would park it in the store with
+  // nothing to re-run this effect (refs do not re-render).
+  useEffect(() => {
+    if (!chatPageShouldConsumeHandoff(splitMode, activeSlot, mainComposerAppend)) return
+    const text = mainComposerAppend!.text
+    dispatch(stageToMainComposer(null))
+    const base = composerSlotRef.current === activeSlot ? inputRef.current : (drafts.current[activeSlot!] ?? '')
+    const merged = mergeIntoDraft(base, text)
+    setDraft(drafts.current, activeSlot!, merged)
+    saveDraftsDebounced()
+    setInput(merged)
+    raisePrefillHint()
+  }, [splitMode, mainComposerAppend, activeSlot, dispatch, drafts, saveDraftsDebounced, raisePrefillHint, setInput])
 
   // Consume prompt from token payload (channel challenge-and-redirect flow).
   // The prompt is HMAC-signed in the token — server validates the signature

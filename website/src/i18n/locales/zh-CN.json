@@ -10539,7 +10539,10 @@
         "thinking": "思考中…",
         "turn_other": "{{count}} 轮",
         "stop_failed": "无法停止侧边对话 — 请重试",
-        "refresh_blocked_busy": "请先停止正在进行的回答 — 刷新会丢弃它"
+        "refresh_blocked_busy": "请先停止正在进行的回答 — 刷新会丢弃它",
+        "send_to_main": "添加到主聊天",
+        "send_to_main_tip": "将其放入主聊天输入框，方便你在那里发送",
+        "send_to_main_done": "已添加到主聊天"
       },
       "sidePanel": {
         "close_panel": "关闭面板",

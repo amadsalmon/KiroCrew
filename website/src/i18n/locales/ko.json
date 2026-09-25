@@ -10539,7 +10539,10 @@
         "thinking": "생각 중…",
         "turn_other": "{{count}}턴",
         "stop_failed": "사이드 턴을 중지하지 못했습니다 — 다시 시도하세요",
-        "refresh_blocked_busy": "먼저 진행 중인 응답을 중지하세요 — 새로 고치면 사라집니다"
+        "refresh_blocked_busy": "먼저 진행 중인 응답을 중지하세요 — 새로 고치면 사라집니다",
+        "send_to_main": "메인 채팅에 추가",
+        "send_to_main_tip": "메인 채팅 입력창에 넣어 그곳에서 보낼 수 있습니다",
+        "send_to_main_done": "메인 채팅에 추가됨"
       },
       "sidePanel": {
         "close_panel": "패널 닫기",

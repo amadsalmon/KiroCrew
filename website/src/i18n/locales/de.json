@@ -10686,7 +10686,10 @@
         "turn_one": "{{count}} Zug",
         "turn_other": "{{count}} Züge",
         "stop_failed": "Der Seiten-Turn konnte nicht gestoppt werden — bitte erneut versuchen",
-        "refresh_blocked_busy": "Beende zuerst die laufende Antwort — ein Aktualisieren würde sie verwerfen"
+        "refresh_blocked_busy": "Beende zuerst die laufende Antwort — ein Aktualisieren würde sie verwerfen",
+        "send_to_main": "Zum Hauptchat hinzufügen",
+        "send_to_main_tip": "Dies wird in das Eingabefeld des Hauptchats gelegt, damit du es dort senden kannst",
+        "send_to_main_done": "Zum Hauptchat hinzugefügt"
       },
       "sidePanel": {
         "close_panel": "Panel schließen",

@@ -49,7 +49,7 @@ const ACTION_CREATORS = [
   'sseSubagentBatchUpdate', 'sseSubagentDone', 'sseSubagentPending', 'sseSubagentQueued',
   'sseSubagentRetrying', 'sseSubagentSnapshot', 'sseSubagentSpawn', 'sseSubagentStalled',
   'sseSubagentTool', 'sseThinkingChunk', 'sseToolActivity', 'sseToolResult', 'sseWorkflowEvent',
-  'startLocalTurn', 'syncSlotRunningFromServer', 'toggleActivity', 'truncateAfterIndex',
+  'stageToMainComposer', 'startLocalTurn', 'syncSlotRunningFromServer', 'toggleActivity', 'truncateAfterIndex',
   'updateStreamingMessage',
 ]
 
@@ -105,7 +105,7 @@ const INITIAL_STATE = {
   loadingOlder: false, slotOlderError: false, lastChunkSeq: undefined, lastChunkGen: undefined,
   _wsChunkedDuringFetch: false, liveFrameSeq: 0, refreshAppliedSeq: {}, _redeliveredFramesDropped: 0, history: [], historyHasMore: false,
   historyOffset: 0, unresumableResume: null, lastResumeRequestId: null, undeletableHistory: null,
-  pendingInput: null, agentSwitchNotice: null, creatingSlot: false, foregroundCreateId: null,
+  pendingInput: null, mainComposerAppend: null, agentSwitchNotice: null, creatingSlot: false, foregroundCreateId: null,
   lastCreatedActivation: null, slotContextPct: {}, slotContextTokens: {}, voicePlaying: false,
   voiceAudio: null, subagents: {}, subagentQueued: {}, subagentQueuedReason: {}, automations: {},
   selectedSubagentId: null, toolLog: [], workflowRuns: {}, activityOpen: false,
