@@ -21,9 +21,14 @@ const BOB_CYCLE_SECONDS = 2.8
  * Owns one file drag across an entire chat pane. A depth counter absorbs the
  * enter/leave pairs emitted while the pointer crosses nested chat controls,
  * while the file check leaves the session-grid's internal DnD untouched.
+ *
+ * *onDrop* also receives the native drop event, so a host that needs to know
+ * WHERE inside the pane the drop landed (the Files rail resolves it against
+ * a specific tree row via `event.target`) can read it without this hook
+ * knowing anything about that host's DOM shape.
  */
 export function useChatFileDrop(
-  onDrop: (dataTransfer: DataTransfer) => void,
+  onDrop: (dataTransfer: DataTransfer, event: ReactDragEvent) => void,
 ): { active: boolean; dropTargetProps: DropTargetProps } {
   const [active, setActive] = useState(false)
   const depthRef = useRef(0)
@@ -89,7 +94,7 @@ export function useChatFileDrop(
     event.stopPropagation()
     const cancelled = suppressedRef.current
     reset()
-    if (!cancelled) onDrop(event.dataTransfer)
+    if (!cancelled) onDrop(event.dataTransfer, event)
   }, [onDrop, reset])
 
   const dropTargetProps = useMemo(() => ({
@@ -104,8 +109,12 @@ export function useChatFileDrop(
 
 export default function ChatDropOverlay({
   active,
+  label,
 }: {
   active: boolean
+  /** Overrides the default "Drop to attach" copy — the Files rail reuses
+   *  this same overlay for its own drop target with its own wording. */
+  label?: string
 }) {
   const reduceMotion = useReducedMotion()
 
@@ -147,7 +156,7 @@ export default function ChatDropOverlay({
               }}
             />
             <span className="mt-4 text-[13px] font-medium text-text-strong">
-              {i18nT('components.chatInput.drop_to_attach')}
+              {label ?? i18nT('components.chatInput.drop_to_attach')}
             </span>
           </motion.div>
         </motion.div>

@@ -176,6 +176,9 @@ export function useChatPaneUploads({ slotKey, dispatch, slotKeyRef, mountedRef, 
     if (dirPaths.length) setInput((prev) => spliceDirTokens(prev, null, dirPaths).value)
     if (files.length) uploadFiles(files)
   }, [uploadFiles, setInput])
+  // useChatFileDrop also hands back the native event, unused here — the
+  // composer only ever cares about the dropped DataTransfer, never where in
+  // the pane it landed.
   const { active: dragOver, dropTargetProps } = useChatFileDrop(handleDrop)
 
   return {

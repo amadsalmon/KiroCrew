@@ -76,6 +76,7 @@ from kiro_crew.config.sections import (  # noqa: F401
     LINK_PATTERNS_MAX,
     link_pattern_url_ok,
 )
+from kiro_crew.constants import WINDOWS_DEVICE_STEMS  # noqa: F401
 from kiro_crew.dashboard import file_api as _file_api
 from kiro_crew.dashboard import part_stream, upload_destination  # noqa: F401
 from kiro_crew.dashboard.chat_persistence import rehydrate_slot_from_history_async
@@ -228,6 +229,7 @@ from kiro_crew.dashboard.file_api.uploads import (  # noqa: F401
     _stream_media_part,
     _upload_dir,
     _write_file_restricted,
+    api_directory_upload,
     api_upload_file,
 )
 from kiro_crew.dashboard.file_api.workspaces import (  # noqa: F401
