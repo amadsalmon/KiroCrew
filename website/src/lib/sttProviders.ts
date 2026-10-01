@@ -132,6 +132,9 @@ export const STREAM_ERROR_CODE_KEY: Record<string, string> = {
   stt_session_failed: 'lib.sttProviders.stream_error_session_failed',
   stt_max_duration_exceeded: 'lib.sttProviders.stream_error_max_duration',
   stt_model_missing: 'lib.sttProviders.stream_error_model_missing',
+  // Amazon Transcribe refused the chosen custom vocabulary. Retrying cannot help,
+  // so the sentence names the setting that can.
+  stt_transcribe_vocabulary_rejected: 'lib.sttProviders.stream_error_vocabulary_rejected',
 }
 
 /**

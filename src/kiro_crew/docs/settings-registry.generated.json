@@ -1413,6 +1413,13 @@
       "description": "AWS region for Transcribe"
     },
     {
+      "id": "voice.custom-vocabulary",
+      "label": "Custom vocabulary",
+      "tab": "voice",
+      "route": "/settings/voice?highlight=key%3Astt.transcribe_vocabulary",
+      "configKey": "stt.transcribe_vocabulary"
+    },
+    {
       "id": "voice.dictation-panel",
       "label": "Dictation panel",
       "tab": "voice",
