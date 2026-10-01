@@ -639,6 +639,7 @@ class TestStreamLifecycle:
             ws = await client.ws_connect("/api/ws/stt")
             msg = await ws.receive_json()
             assert msg["type"] == "error"
+            assert msg["code"] == "stt_session_failed"
             await ws.close()
 
     @pytest.mark.asyncio
@@ -729,6 +730,81 @@ class TestStreamLifecycle:
         assert stt_stream._vocabulary_rejected(refusal, "team-terms") is True
         assert stt_stream._vocabulary_rejected(RuntimeError("vocabulary"), "team-terms") is False
         assert stt_stream._vocabulary_rejected(refusal, "") is False
+
+    @pytest.mark.asyncio
+    async def test_access_denied_at_start_has_its_own_code(self, monkeypatch):
+        """AWS's authorization refusal reaches the browser as its own code.
+
+        Every retry is refused the same way, so the generic session failure, whose
+        remedy is to record again, leaves the user stuck. The English stays fixed
+        text: AWS's own message names the caller's ARN.
+        """
+        from amazon_transcribe.exceptions import UnknownServiceException
+
+        denied = UnknownServiceException(
+            403,
+            "AccessDeniedException",
+            "User: arn:aws:sts::111122223333:assumed-role/Test/session is not authorized "
+            "to perform: transcribe:StartStreamTranscription",
+        )
+        self._install_stubs(monkeypatch, start_exc=denied)
+        async with TestClient(TestServer(_make_app())) as client:
+            ws = await client.ws_connect("/api/ws/stt")
+            msg = await ws.receive_json()
+            assert msg == {
+                "type": "error",
+                "message": "AWS denied access to transcribe:StartStreamTranscription",
+                "code": "stt_aws_access_denied",
+            }
+            await ws.close()
+
+    def test_other_start_failures_keep_the_generic_code(self):
+        """Only the authorization refusal is told apart, not every 403 or SDK error.
+
+        An expired or invalid token is a 403 too, but the consent gate's identity
+        probe reports it on the next attempt, and a token IAM has not propagated yet
+        works seconds later, so "record again" is the right advice for both.
+        """
+        from amazon_transcribe.exceptions import BadRequestException, UnknownServiceException
+
+        from kiro_crew.dashboard import stt_stream
+
+        for exc in (
+            UnknownServiceException(403, "UnrecognizedClientException", "token is invalid"),
+            UnknownServiceException(500, "InternalFailure", "try again"),
+            BadRequestException("unsupported language"),
+            RuntimeError("No AWS credentials found for profile 'test'"),
+        ):
+            assert stt_stream._transcribe_start_failure(exc) == (
+                "failed to start transcription",
+                stt_stream._CODE_SESSION_FAILED,
+            ), exc
+
+    def test_access_denied_as_the_sdk_parses_it_keeps_its_code(self):
+        """AWS's refusal goes through the SDK's own error parser, not a hand-built exception.
+
+        The parser turns the response's ``x-amzn-errortype`` header into the exception
+        the stream start raises. If a release models ``AccessDeniedException`` as a
+        class of its own, this test fails, rather than users silently getting the
+        generic "record again" advice.
+        """
+        from amazon_transcribe.deserialize import TranscribeStreamingResponseParser
+
+        from kiro_crew.dashboard import stt_stream
+
+        response = SimpleNamespace(
+            status_code=403,
+            headers={"x-amzn-errortype": "AccessDeniedException:"},
+        )
+        body = (
+            b'{"Message": "User: arn:aws:sts::111122223333:assumed-role/Test/session is not '
+            b'authorized to perform: transcribe:StartStreamTranscription"}'
+        )
+        exc = TranscribeStreamingResponseParser().parse_exception(response, body)
+        assert stt_stream._transcribe_start_failure(exc) == (
+            "AWS denied access to transcribe:StartStreamTranscription",
+            stt_stream._CODE_AWS_ACCESS_DENIED,
+        ), f"the SDK raises {type(exc).__name__} for AccessDeniedException"
 
     @pytest.mark.asyncio
     async def test_start_failure_emits_sel_end_audit(self, monkeypatch):
