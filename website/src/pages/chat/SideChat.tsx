@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MessageCircleQuestionMark, RotateCcw } from 'lucide-react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { api } from '../../api/client'
-import { useAppSelector, useAppDispatch } from '../../store'
-import { sideClose, sideOptimisticAppend, sideOptimisticRollback, sseSideQueue, sideReleaseConsumed, queueEditBroadcastAt } from '../../store/chatSlice'
+import { useAppSelector, useAppDispatch, useAppStore } from '../../store'
+import { sideClose, sideOptimisticAppend, sideOptimisticRollback, sseSideQueue, sseSideResult, sideReleaseConsumed, queueEditBroadcastAt } from '../../store/chatSlice'
 import QueueStack from '../../components/QueueStack'
 import ChatMessageList from '../../app-sdk/ChatMessageList'
 import FollowUpBar from '../../components/FollowUpBar'
@@ -72,6 +72,7 @@ function relativeTime(iso: string): string | null {  const diff = Date.now() - n
 export default function SideChat({ slot }: { slot: string }) {
   const connected = useConnected()
   const dispatch = useAppDispatch()
+  const store = useAppStore()
   // The footer describes what the backend enforces, so it follows the selected
   // harness: the derived `<agent>--readonly` spec is a kiro-cli mechanism, and on
   // any other backend the side turn runs with no tools at all (REJECT_ALL). The
@@ -530,6 +531,28 @@ export default function SideChat({ slot }: { slot: string }) {
     },
   })
 
+  // Stop the in-flight side turn without closing the conversation. The server
+  // ends the turn and broadcasts a terminal frame; the HTTP reply carries the
+  // same frame, applied here too so a WebSocket that dropped after the POST
+  // cannot leave the panel busy. The reducer drops whichever copy lands second.
+  // The reply is applied only while the side conversation and its latest run
+  // are the ones on screen when Stop was pressed: a reply that lands after a
+  // refresh, a reopen or a newer run's first frame describes a turn that is no
+  // longer current, and must not settle the newer one.
+  // A failed interrupt leaves the turn exactly as it was; its error goes
+  // through the same `displayError` notice as a failed send. The button's own
+  // in-flight state (`interruptMutation.isPending`) prevents a double-press.
+  const interruptMutation = useMutation({
+    mutationFn: ({ slot: target }: { slot: string; createdAt?: string; runId?: string }) => api.sideInterrupt(target),
+    onSuccess: (res, { slot: target, createdAt, runId }) => {
+      if (!res.interrupted || !res.run_id || typeof res.content !== 'string') return
+      const now = store.getState().chat.slotSide[target]
+      if (!now || now.createdAt !== createdAt || now.lastRunId !== runId) return
+      if (runId && runId !== res.run_id) return
+      dispatch(sseSideResult({ slot: target, run_id: res.run_id, role: 'assistant', content: res.content, is_error: true, final: true }))
+    },
+  })
+
   // Scroll follow lives in the virtualizer behind ChatMessageList; no
   // tail-keyed effect — its measurement sees every height change.
 
@@ -608,7 +631,7 @@ export default function SideChat({ slot }: { slot: string }) {
     sendMutation.mutate({ q, steer, optimistic: !isBusy, slot, override: override != null, ...(blocks.length ? { display: typed, pastes: blocks } : {}) })
   }, [draft, pasteBlocks, slot, sendMutation, isBusy, exceedsByteLimit])
 
-  const sendErr = sendMutation.error
+  const sendErr = sendMutation.error ?? interruptMutation.error
   const displayError = sendErr
     ? (sendErr instanceof Error ? sendErr.message : String(sendErr))
     : localError
@@ -625,6 +648,15 @@ export default function SideChat({ slot }: { slot: string }) {
   const handleRefresh = useCallback(() => {
     refreshMutation.mutate({ slot })
   }, [refreshMutation, slot])
+
+  // Fresh object every render (useMutation), so no stability to protect — the
+  // same reasoning handleRefresh and send state above. Guarded on a live turn
+  // AND no interrupt already in flight, so the control cannot fire against an
+  // idle side or stack two cancels for one turn.
+  const handleStop = useCallback(() => {
+    if (!isBusy || interruptMutation.isPending) return
+    interruptMutation.mutate({ slot, createdAt: reduxSide?.createdAt, runId: reduxSide?.lastRunId })
+  }, [interruptMutation, slot, isBusy, reduxSide?.createdAt, reduxSide?.lastRunId])
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -749,6 +781,14 @@ export default function SideChat({ slot }: { slot: string }) {
             canSteer
             onSteer={() => { void send(undefined, true) }}
             isRunning={isBusy}
+            // Stop the running side turn. Passed only while a turn is in flight,
+            // so the busy composer gains a Stop beside the steer/queue split;
+            // idle, the control is absent and the Send branch renders as before.
+            // No `stopState`: the side turn has no tool-approval wait to escalate
+            // through (read-only auto / reject-all), so a single interrupt is the
+            // whole contract, and the main chat's soft/hard machine would import
+            // state this sidecar does not keep.
+            onStop={isBusy ? handleStop : undefined}
             placeholder={i18nT('pages.chat.sideChat.ask_a_side_question_2')}
             inputAriaLabel={i18nT('pages.chat.sideChat.ask_a_side_question')}
             typedCommandMenus={false}
