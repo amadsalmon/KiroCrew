@@ -2705,7 +2705,7 @@ export const SETTINGS_REGISTRY: SettingEntry[] =
     "id": "voice.provider",
     "label": "Provider",
     "labelKey": "pages.settings.sttSettings.provider",
-    "hint": "Local speech recognition runs on this machine and sends nothing anywhere. Transcribe uploads your audio to AWS.",
+    "hint": "Local speech recognition runs on this machine and sends nothing anywhere. Transcribe streams your audio to AWS.",
     "tab": "voice",
     "type": "select",
     "occurrence": 1,

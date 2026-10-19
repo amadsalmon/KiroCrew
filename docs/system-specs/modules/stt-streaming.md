@@ -131,6 +131,28 @@ New work goes to the owner of its responsibility:
 Legacy provider values and the loader behavior for persisted values are in
 [Legacy provider values](#legacy-provider-values).
 
+## Retention
+
+Neither the gateway nor the user's AWS account keeps dictation audio, and
+**Settings -> Voice** answers "Is my audio kept?" in one line under the provider
+picker, with the detail in its info tip (`pages/settings/SttRetentionNote.tsx`).
+
+- **Gateway.** The live socket never writes PCM to disk. The batch endpoint
+  streams an upload to a temp file that its `finally` unlinks on every exit path,
+  and a remuxed temp is unlinked the same way (`transcribe_aws._transcribe_aws`).
+- **Browser.** The only audio copy is the failed batch capture
+  `hooks/voiceTranscriptInbox.ts` holds in memory for Retry or Save, until the
+  tab unloads.
+- **`transcribe`.** Both paths call `StartStreamTranscription`. Nothing calls
+  `StartTranscriptionJob` or writes to S3, so the user's account gets no
+  transcription job, audio file or transcript, and the Transcribe console's job
+  list stays empty. AWS itself may keep voice inputs to improve its services,
+  outside the user's account; an AWS Organizations AI services opt-out policy
+  stops that and deletes what was kept for it. The note links that policy's
+  documentation.
+- **Text.** The transcript becomes composer text and is kept with the message
+  like typed input.
+
 ## Architecture
 
 ```

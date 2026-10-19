@@ -13,7 +13,9 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -1346,3 +1348,20 @@ class TestStagedFfmpegOutlivesSpawn:
             await transcribe._transcribe_aws(str(src), cfg)
         assert not owned.exists()
         assert src.exists()
+
+
+class TestTranscribeKeepsNoJobHistory:
+    """Settings tells a Transcribe user that nothing is created in their AWS
+    account, which holds only while every path streams. A batch job would leave
+    a job record, and its output, in the account."""
+
+    def test_no_source_starts_a_transcription_job(self) -> None:
+        src = Path(transcribe.__file__).resolve().parent
+        offenders = [
+            str(path.relative_to(src))
+            for path in src.rglob("*.py")
+            if re.search(
+                r"start_transcription_job|StartTranscriptionJob", path.read_text(encoding="utf-8")
+            )
+        ]
+        assert offenders == []

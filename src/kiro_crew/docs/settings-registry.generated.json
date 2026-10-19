@@ -1652,7 +1652,7 @@
       "label": "Provider",
       "tab": "voice",
       "route": "/settings/voice?highlight=key%3Astt.provider",
-      "hint": "Local speech recognition runs on this machine and sends nothing anywhere. Transcribe uploads your audio to AWS.",
+      "hint": "Local speech recognition runs on this machine and sends nothing anywhere. Transcribe streams your audio to AWS.",
       "configKey": "stt.provider"
     },
     {

@@ -30,6 +30,7 @@ import {
 import { parseErrorCode, parseErrorField, reportForError, sendErrorToChat } from '../../utils/errorReport'
 import { PttTestStrip } from '../../components/PttTestStrip'
 import AwsConsentGate from '../../components/AwsConsentGate'
+import SttRetentionNote from './SttRetentionNote'
 import {
   BARE_CODE_LABEL_KEY,
   BARE_CODE_LABEL_KEY_OTHER,
@@ -1244,6 +1245,8 @@ export default function SttSettings({ cardIndex }: {
         )}
 
         <SettingsSelect label={i18nT('pages.settings.sttSettings.provider')} hint={i18nT('pages.settings.sttSettings.provider_desc')} value={provider} options={providerOptions} optionLabels={providerOptions.map(providerLabel)} onChange={handleProvider} disabled={saving} configKey="stt.provider" />
+
+        <SttRetentionNote provider={provider} />
 
         {/* Gated on a NON-EMPTY catalog, not just on the provider: the catalog is
             the status endpoint's to serve, and a picker with no options is worse
